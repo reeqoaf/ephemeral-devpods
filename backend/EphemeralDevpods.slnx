@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="EphemeralDevpods.Core/EphemeralDevpods.Core.csproj" />
+  <Project Path="EphemeralDevpods.Functions/EphemeralDevpods.Functions.csproj" />
+  <Project Path="EphemeralDevpods.Infrastructure/EphemeralDevpods.Infrastructure.csproj" />
+  <Project Path="EphemeralDevpods.Tests/EphemeralDevpods.Tests.csproj" />
+</Solution>

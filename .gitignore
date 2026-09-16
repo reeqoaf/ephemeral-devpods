@@ -55,3 +55,18 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Azure Functions local settings (contains local connection strings)
+local.settings.json
+
+# IDE
+.vs/
+.idea/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/build/
+
+# Docs (untracked for now)
+docs/
