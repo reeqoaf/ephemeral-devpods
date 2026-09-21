@@ -34,6 +34,34 @@ public class TableEnvironmentRepositoryTests(AzuriteFixture fixture) : IClassFix
     }
 
     [Fact]
+    public async Task Tunnel_fields_round_trip()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString());
+        env.TunnelName = "epd-12345678";
+        env.TunnelReady = true;
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Equal("epd-12345678", loaded.TunnelName);
+        Assert.True(loaded.TunnelReady);
+    }
+
+    [Fact]
+    public async Task Rows_without_tunnel_fields_load_as_not_ready()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString());
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.TunnelName);
+        Assert.False(loaded.TunnelReady);
+    }
+
+    [Fact]
     public async Task Get_returns_null_when_missing()
     {
         var loaded = await _repo.GetAsync("nobody", "missing-id", CancellationToken.None);

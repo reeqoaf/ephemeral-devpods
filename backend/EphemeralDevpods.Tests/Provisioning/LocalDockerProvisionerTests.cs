@@ -57,6 +57,20 @@ public class LocalDockerProvisionerTests(DockerFixture docker) : IClassFixture<D
     }
 
     [Fact]
+    public async Task Names_the_tunnel_after_the_environment_id()
+    {
+        var provisioner = CreateProvisioner();
+        var environment = MakeEnvironment("1a2b3c4d-0000-0000-0000-000000000000");
+        var spec = new EnvironmentSpec { Image = "alpine:3.19", ForwardPorts = [] };
+
+        var result = await provisioner.ProvisionAsync(environment, spec, CancellationToken.None);
+
+        Assert.Equal("epd-1a2b3c4d", result.TunnelName);
+
+        await provisioner.TeardownAsync(environment.EnvironmentId, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Publishes_forwarded_ports_in_provision_result()
     {
         var provisioner = CreateProvisioner();

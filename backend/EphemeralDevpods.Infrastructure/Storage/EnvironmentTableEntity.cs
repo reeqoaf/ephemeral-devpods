@@ -19,6 +19,8 @@ public sealed class EnvironmentTableEntity : ITableEntity
     public DateTimeOffset? LastActivityAt { get; set; }
     public string? PublicUrl { get; set; }
     public string? AccessToken { get; set; }
+    public string? TunnelName { get; set; }
+    public bool TunnelReady { get; set; }
 
     public static EnvironmentTableEntity FromDomain(WorkspaceEnvironment env) => new()
     {
@@ -31,6 +33,8 @@ public sealed class EnvironmentTableEntity : ITableEntity
         LastActivityAt = env.LastActivityAt,
         PublicUrl = env.PublicUrl,
         AccessToken = env.AccessToken,
+        TunnelName = env.TunnelName,
+        TunnelReady = env.TunnelReady,
     };
 
     public WorkspaceEnvironment ToDomain() => new()
@@ -44,5 +48,7 @@ public sealed class EnvironmentTableEntity : ITableEntity
         LastActivityAt = LastActivityAt,
         PublicUrl = PublicUrl,
         AccessToken = AccessToken,
+        TunnelName = TunnelName,
+        TunnelReady = TunnelReady,
     };
 }

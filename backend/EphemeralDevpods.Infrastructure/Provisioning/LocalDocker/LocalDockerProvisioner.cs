@@ -21,7 +21,9 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
         WorkspaceEnvironment environment, EnvironmentSpec spec, CancellationToken ct)
     {
         var imageRef = await ResolveImageAsync(environment, spec, ct);
-        var entrypointScript = BuildEntrypointScript(environment.RepoUrl, spec.PostCreateCommand, spec.PostAttachCommand);
+        var tunnelName = TunnelNameFor(environment.EnvironmentId);
+        var entrypointScript = BuildEntrypointScript(
+            environment.RepoUrl, spec.PostCreateCommand, spec.PostAttachCommand, tunnelName);
 
         var exposedPorts = new Dictionary<string, EmptyStruct>();
         var portBindings = new Dictionary<string, IList<PortBinding>>();
@@ -63,6 +65,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
         {
             PublicUrl = spec.ForwardPorts.Count > 0 ? $"http://localhost:{spec.ForwardPorts[0]}" : "",
             AccessToken = "", // purely localhost-bound — no token needed, nothing is internet-reachable
+            TunnelName = tunnelName,
             Resources = [resource],
         };
     }
@@ -71,6 +74,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
     {
         foreach (var container in await FindContainersAsync(environmentId, ct))
         {
+            await UnregisterTunnelAsync(container, ct);
             await dockerClient.Containers.StopContainerAsync(container.ID, new ContainerStopParameters(), ct);
             await dockerClient.Containers.RemoveContainerAsync(
                 container.ID, new ContainerRemoveParameters { Force = true }, ct);
@@ -89,6 +93,75 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
             _ => EnvironmentStatus.Failed,
         };
     }
+
+    public async Task<TunnelState> GetTunnelStateAsync(string environmentId, CancellationToken ct)
+    {
+        var container = (await FindContainersAsync(environmentId, ct)).FirstOrDefault()
+            ?? throw new KeyNotFoundException($"No local Docker container found for environment {environmentId}.");
+
+        using var logs = await dockerClient.Containers.GetContainerLogsAsync(
+            container.ID,
+            tty: false,
+            new ContainerLogsParameters { ShowStdout = true, ShowStderr = true, Tail = "200" },
+            ct);
+        var (stdout, stderr) = await logs.ReadOutputToEndAsync(ct);
+
+        var fromLogs = TunnelLogParser.Parse(stdout + stderr);
+        if (fromLogs.Phase == TunnelPhase.AwaitingLogin)
+        {
+            return fromLogs;
+        }
+
+        var status = await ExecAsync(container.ID, [CodeCliPath, "tunnel", "status"], ct);
+        return status is not null && TunnelLogParser.IsConnected(status)
+            ? new TunnelState(TunnelPhase.Ready)
+            : fromLogs;
+    }
+
+    /// <summary>
+    /// Best effort: a tunnel left registered keeps counting against the user's per-account tunnel limit
+    /// after its container is gone. Teardown must never fail because of this.
+    /// </summary>
+    private async Task UnregisterTunnelAsync(ContainerListResponse container, CancellationToken ct)
+    {
+        if (container.State != "running")
+        {
+            return;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            await ExecAsync(container.ID, [CodeCliPath, "tunnel", "unregister"], timeout.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // unregister hung (e.g. waiting on a login) — carry on with the teardown
+        }
+    }
+
+    /// <summary>Runs a command in the container; null if it couldn't be started (container stopping, CLI missing).</summary>
+    private async Task<string?> ExecAsync(string containerId, string[] command, CancellationToken ct)
+    {
+        try
+        {
+            var exec = await dockerClient.Exec.ExecCreateContainerAsync(
+                containerId,
+                new ContainerExecCreateParameters { AttachStdout = true, AttachStderr = true, Cmd = command },
+                ct);
+            using var stream = await dockerClient.Exec.StartAndAttachContainerExecAsync(exec.ID, tty: false, ct);
+            var (stdout, _) = await stream.ReadOutputToEndAsync(ct);
+            return stdout;
+        }
+        catch (DockerApiException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Short and stable so it fits in the vscode.dev URL; the 8-char prefix of the GUID is unique enough per account.</summary>
+    private static string TunnelNameFor(string environmentId) => $"epd-{environmentId[..8]}";
 
     private Task<IList<ContainerListResponse>> FindContainersAsync(string environmentId, CancellationToken ct) =>
         dockerClient.Containers.ListContainersAsync(
@@ -187,8 +260,22 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
 
     private const string CodeCliPath = "/opt/ephemeral-devpods-vscode-cli/code";
 
+    /// <summary>
+    /// Login is its own step before the tunnel: chaining `user login` inside `code tunnel` makes the CLI
+    /// exit right after authenticating. The loop re-prompts (with a fresh device code) if a code expires,
+    /// and the marker lines let <see cref="TunnelLogParser"/> tell "waiting for login" from "starting".
+    /// </summary>
+    private static string BuildTunnelFragment(string tunnelName) =>
+        $"until {CodeCliPath} tunnel user show >/dev/null 2>&1; do " +
+        $"echo {ShellQuote(TunnelLogParser.LoginRequiredMarker)}; " +
+        $"{CodeCliPath} tunnel user login --provider github || sleep 2; " +
+        "done && " +
+        $"echo {ShellQuote(TunnelLogParser.StartingMarker)} && " +
+        $"exec {CodeCliPath} tunnel --name {ShellQuote(tunnelName)} --accept-server-license-terms";
+
     private static string BuildEntrypointScript(
-        string repoUrl, IReadOnlyList<string> postCreateCommand, IReadOnlyList<string> postAttachCommand)
+        string repoUrl, IReadOnlyList<string> postCreateCommand, IReadOnlyList<string> postAttachCommand,
+        string tunnelName)
     {
         var script = new StringBuilder("set -e; ")
             .Append($"git clone {ShellQuote(repoUrl)} /workspace && cd /workspace");
@@ -210,7 +297,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
 
         return script
             .Append(" && ").Append(InstallCodeCliFragment)
-            .Append($" && exec {CodeCliPath} tunnel --accept-server-license-terms")
+            .Append(" && ").Append(BuildTunnelFragment(tunnelName))
             .ToString();
     }
 

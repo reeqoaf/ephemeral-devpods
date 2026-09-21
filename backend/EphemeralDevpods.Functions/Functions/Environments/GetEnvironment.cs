@@ -22,7 +22,8 @@ public sealed class GetEnvironment(IEnvironmentRepository environments, Environm
             return await req.NotFoundAsync(ct);
         }
 
-        environment = await statusSync.RefreshAsync(environment, ct);
-        return await req.WriteJsonAsync(HttpStatusCode.OK, EnvironmentResponse.From(environment), ct);
+        var snapshot = await statusSync.RefreshAsync(environment, ct);
+        return await req.WriteJsonAsync(
+            HttpStatusCode.OK, EnvironmentResponse.From(snapshot.Environment, snapshot.Tunnel), ct);
     }
 }

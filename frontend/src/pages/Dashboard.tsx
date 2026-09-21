@@ -16,6 +16,8 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded'
 import { api } from '../api/client'
 import type { EnvironmentStatus, WorkspaceEnvironment } from '../api/types'
+import { EditorActions } from '../components/EditorActions'
+import { StopEnvironmentButton } from '../components/StopEnvironmentButton'
 import { Layout } from './Layout'
 
 const statusColor: Record<EnvironmentStatus, 'info' | 'success' | 'default' | 'error'> = {
@@ -23,6 +25,14 @@ const statusColor: Record<EnvironmentStatus, 'info' | 'success' | 'default' | 'e
   Running: 'success',
   Expired: 'default',
   Failed: 'error',
+}
+
+/** Poll quickly while something is still changing under the user: provisioning, or a tunnel not yet signed in. */
+function isSettling(env: WorkspaceEnvironment): boolean {
+  return (
+    env.status === 'Provisioning' ||
+    (env.status === 'Running' && !!env.tunnel && env.tunnel.phase !== 'Ready')
+  )
 }
 
 function timeRemaining(env: WorkspaceEnvironment): string {
@@ -64,23 +74,32 @@ function EnvironmentCard({ env }: { env: WorkspaceEnvironment }) {
           <Typography variant="body2" color="text.secondary">
             {timeRemaining(env)}
           </Typography>
-          {env.publicUrl ? (
-            <Button
-              component={Link}
-              href={env.publicUrl}
-              target="_blank"
-              rel="noreferrer"
-              size="small"
-              endIcon={<OpenInNewRoundedIcon fontSize="small" />}
-            >
-              Open
-            </Button>
-          ) : (
-            <Typography variant="body2" color="text.disabled">
-              not ready
-            </Typography>
-          )}
+          <Stack direction="row" sx={{ alignItems: 'center', gap: 0.5 }}>
+            {env.publicUrl ? (
+              <Button
+                component={Link}
+                href={env.publicUrl}
+                target="_blank"
+                rel="noreferrer"
+                size="small"
+                endIcon={<OpenInNewRoundedIcon fontSize="small" />}
+              >
+                Open app
+              </Button>
+            ) : (
+              <Typography variant="body2" color="text.disabled">
+                not ready
+              </Typography>
+            )}
+            {env.status !== 'Expired' && <StopEnvironmentButton env={env} />}
+          </Stack>
         </Stack>
+
+        {env.status === 'Running' && env.tunnel && (
+          <Box sx={{ mt: 2 }}>
+            <EditorActions tunnel={env.tunnel} />
+          </Box>
+        )}
       </CardContent>
     </Card>
   )
@@ -112,8 +131,7 @@ export function Dashboard() {
   const { data: environments, isLoading, error } = useQuery({
     queryKey: ['environments'],
     queryFn: api.listEnvironments,
-    refetchInterval: (query) =>
-      query.state.data?.some((e) => e.status === 'Provisioning') ? 3000 : 15000,
+    refetchInterval: (query) => (query.state.data?.some(isSettling) ? 3000 : 15000),
   })
 
   return (

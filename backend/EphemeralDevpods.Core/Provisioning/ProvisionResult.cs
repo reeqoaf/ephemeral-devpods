@@ -6,5 +6,6 @@ public sealed class ProvisionResult
 {
     public required string PublicUrl { get; init; }
     public required string AccessToken { get; init; }
+    public required string TunnelName { get; init; }
     public required IReadOnlyList<DeployedResource> Resources { get; init; }
 }

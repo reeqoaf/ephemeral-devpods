@@ -20,4 +20,10 @@ public sealed class WorkspaceEnvironment
     public DateTimeOffset? LastActivityAt { get; set; }
     public string? PublicUrl { get; set; }
     public string? AccessToken { get; set; }
+
+    /// <summary>Name the environment's `code tunnel` registers under (used to build editor URLs).</summary>
+    public string? TunnelName { get; set; }
+
+    /// <summary>Latched once the tunnel has connected, so ready environments need no further tunnel lookups.</summary>
+    public bool TunnelReady { get; set; }
 }

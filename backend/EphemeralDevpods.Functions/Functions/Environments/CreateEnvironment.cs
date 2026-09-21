@@ -63,6 +63,7 @@ public sealed class CreateEnvironment(
             environment.Status = EnvironmentStatus.Running;
             environment.PublicUrl = result.PublicUrl;
             environment.AccessToken = result.AccessToken;
+            environment.TunnelName = result.TunnelName;
 
             foreach (var resource in result.Resources)
             {

@@ -12,11 +12,11 @@ namespace EphemeralDevpods.Functions.Functions.Environments;
 /// </summary>
 public sealed class EnvironmentStatusSync(IComputeProvisioner provisioner, IEnvironmentRepository environments)
 {
-    public async Task<WorkspaceEnvironment> RefreshAsync(WorkspaceEnvironment environment, CancellationToken ct)
+    public async Task<EnvironmentSnapshot> RefreshAsync(WorkspaceEnvironment environment, CancellationToken ct)
     {
         if (environment.Status is not (EnvironmentStatus.Running or EnvironmentStatus.Provisioning))
         {
-            return environment; // Expired/Failed are terminal — nothing left to check
+            return new EnvironmentSnapshot(environment, null); // Expired/Failed are terminal — nothing left to check
         }
 
         EnvironmentStatus liveStatus;
@@ -31,12 +31,38 @@ public sealed class EnvironmentStatusSync(IComputeProvisioner provisioner, IEnvi
             liveStatus = EnvironmentStatus.Failed;
         }
 
-        if (liveStatus != environment.Status)
+        var changed = liveStatus != environment.Status;
+        environment.Status = liveStatus;
+
+        // Once the tunnel has connected it's latched on the row, so only environments still waiting
+        // on the user's device-code login pay for a log read on each refresh.
+        TunnelState? tunnel = null;
+        if (environment.Status == EnvironmentStatus.Running && !environment.TunnelReady)
         {
-            environment.Status = liveStatus;
+            try
+            {
+                tunnel = await provisioner.GetTunnelStateAsync(environment.EnvironmentId, ct);
+            }
+            catch (KeyNotFoundException)
+            {
+                // Container vanished between the status check and now; the next refresh marks it Failed.
+            }
+
+            if (tunnel?.Phase == TunnelPhase.Ready)
+            {
+                environment.TunnelReady = true;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
             await environments.UpsertAsync(environment, ct);
         }
 
-        return environment;
+        return new EnvironmentSnapshot(environment, tunnel);
     }
 }
+
+/// <summary>An environment plus its live (never persisted) tunnel state, as of this refresh.</summary>
+public sealed record EnvironmentSnapshot(WorkspaceEnvironment Environment, TunnelState? Tunnel);
