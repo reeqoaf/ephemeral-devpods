@@ -13,6 +13,8 @@ public sealed class AzuriteFixture : IAsyncLifetime
 
     public TableClient EnvironmentsTable { get; private set; } = null!;
     public TableClient ResourcesTable { get; private set; } = null!;
+    public TableClient UsersTable { get; private set; } = null!;
+    public TableClient IdentitiesTable { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
@@ -21,14 +23,20 @@ public sealed class AzuriteFixture : IAsyncLifetime
 
         EnvironmentsTable = serviceClient.GetTableClient($"testenvironments{suffix}");
         ResourcesTable = serviceClient.GetTableClient($"testresources{suffix}");
+        UsersTable = serviceClient.GetTableClient($"testusers{suffix}");
+        IdentitiesTable = serviceClient.GetTableClient($"testidentities{suffix}");
 
         await EnvironmentsTable.CreateIfNotExistsAsync();
         await ResourcesTable.CreateIfNotExistsAsync();
+        await UsersTable.CreateIfNotExistsAsync();
+        await IdentitiesTable.CreateIfNotExistsAsync();
     }
 
     public async Task DisposeAsync()
     {
         await EnvironmentsTable.DeleteAsync();
         await ResourcesTable.DeleteAsync();
+        await UsersTable.DeleteAsync();
+        await IdentitiesTable.DeleteAsync();
     }
 }

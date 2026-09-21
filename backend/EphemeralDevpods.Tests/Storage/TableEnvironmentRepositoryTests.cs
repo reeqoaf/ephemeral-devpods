@@ -58,6 +58,20 @@ public class TableEnvironmentRepositoryTests(AzuriteFixture fixture) : IClassFix
     }
 
     [Fact]
+    public async Task Get_returns_null_when_the_environment_belongs_to_another_owner()
+    {
+        var alice = Guid.NewGuid().ToString();
+        var bob = Guid.NewGuid().ToString();
+        var env = MakeEnv(alice, Guid.NewGuid().ToString());
+        await _repo.UpsertAsync(env, CancellationToken.None);
+
+        // The id is valid and exists, but only under alice's partition — this is what the endpoints' 404 relies on.
+        Assert.Null(await _repo.GetAsync(bob, env.EnvironmentId, CancellationToken.None));
+        Assert.Empty(await _repo.ListByOwnerAsync(bob, CancellationToken.None));
+        Assert.NotNull(await _repo.GetAsync(alice, env.EnvironmentId, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ListExpiringBefore_includes_only_past_ttl_running_or_provisioning_rows()
     {
         var owner = Guid.NewGuid().ToString();

@@ -1,28 +1,23 @@
-using Microsoft.Azure.Functions.Worker.Http;
+using EphemeralDevpods.Core.Auth;
+using Microsoft.Azure.Functions.Worker;
 
 namespace EphemeralDevpods.Functions.Http;
 
 /// <summary>
-/// Resolves the authenticated user. In production, Easy Auth injects x-ms-client-principal-name
-/// on every request. Local dev has no Easy Auth to exercise (§6/§13), so it falls back to a fixed
-/// fake user — matching the documented local-dev decision.
+/// The authenticated user's id for the current invocation, placed there by <see cref="AuthMiddleware"/>
+/// after validating the session cookie. There is deliberately no fallback identity: no session, no user.
 /// </summary>
 public static class CurrentUser
 {
-    private const string LocalDevUserId = "local-dev-user";
-    private const string EasyAuthPrincipalNameHeader = "x-ms-client-principal-name";
+    private const string ItemKey = "ephemeral-devpods.userId";
 
-    public static string GetId(HttpRequestData req)
-    {
-        if (req.Headers.TryGetValues(EasyAuthPrincipalNameHeader, out var values))
-        {
-            var name = values.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                return name;
-            }
-        }
+    /// <summary>The user id; throws <see cref="UnauthorizedException"/> (401) if the request has no valid session.</summary>
+    public static string GetId(FunctionContext context) =>
+        TryGetId(context) ?? throw new UnauthorizedException();
 
-        return LocalDevUserId;
-    }
+    /// <summary>The user id, or null — for anonymous-allowed functions that behave differently when signed in.</summary>
+    public static string? TryGetId(FunctionContext context) =>
+        context.Items.TryGetValue(ItemKey, out var value) ? value as string : null;
+
+    internal static void Set(FunctionContext context, string userId) => context.Items[ItemKey] = userId;
 }

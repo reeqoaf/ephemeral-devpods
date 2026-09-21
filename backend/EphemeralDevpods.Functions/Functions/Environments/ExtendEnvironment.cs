@@ -13,9 +13,9 @@ public sealed class ExtendEnvironment(IEnvironmentRepository environments)
     [Function("ExtendEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "environments/{environmentId}/extend")] HttpRequestData req,
-        string environmentId, CancellationToken ct)
+        string environmentId, FunctionContext context, CancellationToken ct)
     {
-        var owner = CurrentUser.GetId(req);
+        var owner = CurrentUser.GetId(context);
         var environment = await environments.GetAsync(owner, environmentId, ct); // §6: per-endpoint ownership check
         if (environment is null)
         {

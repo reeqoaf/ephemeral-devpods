@@ -11,9 +11,9 @@ public sealed class ListEnvironments(IEnvironmentRepository environments, Enviro
     [Function("ListEnvironments")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "environments")] HttpRequestData req,
-        CancellationToken ct)
+        FunctionContext context, CancellationToken ct)
     {
-        var owner = CurrentUser.GetId(req);
+        var owner = CurrentUser.GetId(context);
         var results = await environments.ListByOwnerAsync(owner, ct);
 
         var refreshed = new List<EnvironmentResponse>(results.Count);
