@@ -15,9 +15,9 @@ public sealed class DeleteEnvironment(
     [Function("DeleteEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "environments/{environmentId}")] HttpRequestData req,
-        string environmentId, CancellationToken ct)
+        string environmentId, FunctionContext context, CancellationToken ct)
     {
-        var owner = CurrentUser.GetId(req);
+        var owner = CurrentUser.GetId(context);
         var environment = await environments.GetAsync(owner, environmentId, ct); // §6: per-endpoint ownership check
         if (environment is null)
         {

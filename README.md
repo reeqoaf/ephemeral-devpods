@@ -14,9 +14,46 @@ Container Instances) is a stub — see `docs/spec.md` for the full design.
 - **State**: Azure Table Storage (Azurite locally)
 - **Compute**: Docker (via Docker.DotNet)
 
+## Auth setup
+
+Sign-in is SSO handled by the backend: **Microsoft** (personal and work/school accounts) or **GitHub**.
+Both resolve to one user, and each user only sees their own environments. Accounts are created by
+signing in with Microsoft; GitHub can sign in only after it has been linked from **Account** settings
+while signed in with Microsoft.
+
+You need one OAuth app per provider (both free). The redirect URIs go through the Vite dev server so
+the session cookie is set on the same origin as the SPA.
+
+**Microsoft** — [Entra admin center](https://entra.microsoft.com) → App registrations → New registration:
+- Supported account types: *Accounts in any organizational directory and personal Microsoft accounts*
+- Redirect URI (Web): `http://localhost:5173/api/auth/callback/microsoft`
+- Certificates & secrets → New client secret
+
+**GitHub** — [Developer settings](https://github.com/settings/developers) → OAuth Apps → New OAuth App:
+- Authorization callback URL: `http://localhost:5173/api/auth/callback/github`
+- Generate a client secret
+
+Then add the settings to `backend/EphemeralDevpods.Functions/local.settings.json` (gitignored) under `Values`.
+Use `__` in place of `:` in these names:
+
+```json
+"Auth__SessionSigningKey": "<random string, 32+ characters>",
+"Auth__Microsoft__ClientId": "<application (client) id>",
+"Auth__Microsoft__ClientSecret": "<secret value>",
+"Auth__GitHub__ClientId": "<client id>",
+"Auth__GitHub__ClientSecret": "<client secret>"
+```
+
+Optionally `Auth__PublicBaseUrl` (default `http://localhost:5173`) is the origin browsers use to reach the
+app; OAuth redirect URIs are built from it. The backend refuses to start if any of the above is missing.
+
+Environments used to be owned by a placeholder `local-dev-user`. Those rows belong to nobody now; to
+start clean, reset Azurite: `docker compose -f docker-compose.dev.yml down -v`.
+
 ## Running locally
 
-Prerequisites: .NET 10 SDK, Docker Desktop, Node + pnpm, Azure Functions Core Tools (`func`).
+Prerequisites: .NET 10 SDK, Docker Desktop, Node + pnpm, Azure Functions Core Tools (`func`), and the
+[auth setup](#auth-setup) above.
 
 ```bash
 # 1. State store
@@ -32,7 +69,7 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:5173`, paste a public repo URL with a `.devcontainer/devcontainer.json`,
+Open `http://localhost:5173`, sign in, paste a public repo URL with a `.devcontainer/devcontainer.json`,
 and go.
 
 ## Tests

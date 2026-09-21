@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\EphemeralDevpods.Core\EphemeralDevpods.Core.csproj" />
     <ProjectReference Include="..\EphemeralDevpods.Infrastructure\EphemeralDevpods.Infrastructure.csproj" />
+    <ProjectReference Include="..\EphemeralDevpods.Functions\EphemeralDevpods.Functions.csproj" />
   </ItemGroup>
 
 </Project>

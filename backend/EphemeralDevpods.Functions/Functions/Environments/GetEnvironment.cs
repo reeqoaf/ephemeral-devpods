@@ -11,9 +11,9 @@ public sealed class GetEnvironment(IEnvironmentRepository environments, Environm
     [Function("GetEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "environments/{environmentId}")] HttpRequestData req,
-        string environmentId, CancellationToken ct)
+        string environmentId, FunctionContext context, CancellationToken ct)
     {
-        var owner = CurrentUser.GetId(req);
+        var owner = CurrentUser.GetId(context);
         // §6: independently verify ownership here, not just at ListEnvironments — otherwise a
         // guessed/enumerated environmentId belonging to another user would leak through.
         var environment = await environments.GetAsync(owner, environmentId, ct);

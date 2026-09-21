@@ -28,7 +28,7 @@ public sealed class CreateEnvironment(
     [Function("CreateEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "environments")] HttpRequestData req,
-        CancellationToken ct)
+        FunctionContext context, CancellationToken ct)
     {
         var body = await req.ReadJsonAsync<CreateEnvironmentRequest>(ct);
         if (string.IsNullOrWhiteSpace(body?.RepoUrl))
@@ -48,7 +48,7 @@ public sealed class CreateEnvironment(
 
         var environment = new WorkspaceEnvironment
         {
-            Owner = CurrentUser.GetId(req),
+            Owner = CurrentUser.GetId(context),
             EnvironmentId = Guid.NewGuid().ToString(),
             RepoUrl = body.RepoUrl,
             Status = EnvironmentStatus.Provisioning,

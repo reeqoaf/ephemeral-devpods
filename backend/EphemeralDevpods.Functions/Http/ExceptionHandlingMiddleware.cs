@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using EphemeralDevpods.Core;
+using EphemeralDevpods.Core.Auth;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.Logging;
@@ -35,6 +36,8 @@ public sealed class ExceptionHandlingMiddleware(ILogger<ExceptionHandlingMiddlew
 
             var (status, message) = ex switch
             {
+                UnauthorizedException => (HttpStatusCode.Unauthorized, "Authentication required."),
+                ConflictException => (HttpStatusCode.Conflict, ex.Message),
                 UserInputException => (HttpStatusCode.BadRequest, ex.Message),
                 JsonException => (HttpStatusCode.BadRequest, "Request body is not valid JSON."),
                 KeyNotFoundException => (HttpStatusCode.NotFound, "Not found."),
