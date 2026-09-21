@@ -65,17 +65,8 @@ public sealed partial class MicrosoftOAuthProvider(HttpClient http, MicrosoftOAu
             throw new OAuthExchangeException($"Microsoft token endpoint returned {(int)response.StatusCode}: {body}");
         }
 
-        string? idToken;
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            idToken = doc.RootElement.TryGetProperty("id_token", out var value) ? value.GetString() : null;
-        }
-        catch (JsonException ex)
-        {
-            throw new OAuthExchangeException("Microsoft token response was not valid JSON.", ex);
-        }
-
+        using var doc = JsonDocument.Parse(body);
+        var idToken = doc.RootElement.TryGetProperty("id_token", out var value) ? value.GetString() : null;
         if (string.IsNullOrEmpty(idToken))
         {
             throw new OAuthExchangeException("Microsoft token response had no id_token.");

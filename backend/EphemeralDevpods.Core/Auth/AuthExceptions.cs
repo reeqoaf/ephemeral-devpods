@@ -19,4 +19,7 @@ public sealed class AccountRuleException(string message) : UserInputException(me
 
 /// <summary>A sign-in via a provider that can't create accounts, with an identity that isn't linked to any user.</summary>
 public sealed class IdentityNotLinkedException(IdentityProvider provider)
-    : UserInputException($"That {provider} account isn't linked to any user.");
+    : UserInputException($"That {provider} account isn't linked to any user.")
+{
+    public IdentityProvider Provider { get; } = provider;
+}

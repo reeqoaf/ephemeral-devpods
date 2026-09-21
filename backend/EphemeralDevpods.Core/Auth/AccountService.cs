@@ -33,18 +33,9 @@ public sealed class AccountService(IUserRepository users, IIdentityRepository id
             CreatedAt = now,
         };
 
-        try
-        {
-            // Identity first: it's the uniqueness gate, so a concurrent first sign-in can't leave an orphan user.
-            await identities.AddAsync(ToLinked(user.UserId, external, now), ct);
-        }
-        catch (IdentityAlreadyLinkedException)
-        {
-            var winner = await identities.FindAsync(external.Provider, external.Subject, ct)
-                ?? throw new UnauthorizedException("Account no longer exists.");
-            return await users.GetAsync(winner.UserId, ct) ?? throw new UnauthorizedException("Account no longer exists.");
-        }
-
+        // Identity first: it's the uniqueness gate, so two concurrent first sign-ins can't both create a user.
+        // The loser gets IdentityAlreadyLinkedException and simply signs in again.
+        await identities.AddAsync(ToLinked(user.UserId, external, now), ct);
         await users.AddAsync(user, ct);
         return user;
     }
