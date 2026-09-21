@@ -1,4 +1,10 @@
-import type { IdentityProvider, Me, WorkspaceEnvironment } from './types'
+import type {
+  CreateEnvironmentInput,
+  IdentityProvider,
+  Me,
+  RepoCheck,
+  WorkspaceEnvironment,
+} from './types'
 
 export class ApiError extends Error {
   status: number
@@ -41,11 +47,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listEnvironments: () => request<WorkspaceEnvironment[]>('/environments'),
 
-  createEnvironment: (repoUrl: string) =>
-    request<WorkspaceEnvironment>('/environments', {
+  /** Also asks the backend to refresh the environment's live status, so it doubles as "refresh". */
+  getEnvironment: (environmentId: string) =>
+    request<WorkspaceEnvironment>(`/environments/${environmentId}`),
+
+  /** Step 1 of the create flow: validates the repo without creating anything. */
+  checkRepo: (repoUrl: string) =>
+    request<RepoCheck>('/environments/check', {
       method: 'POST',
       body: JSON.stringify({ repoUrl }),
     }),
+
+  createEnvironment: (input: CreateEnvironmentInput) =>
+    request<WorkspaceEnvironment>('/environments', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  stopEnvironment: (environmentId: string) =>
+    request<WorkspaceEnvironment>(`/environments/${environmentId}/stop`, { method: 'POST' }),
+
+  startEnvironment: (environmentId: string) =>
+    request<WorkspaceEnvironment>(`/environments/${environmentId}/start`, { method: 'POST' }),
+
+  restartEnvironment: (environmentId: string) =>
+    request<WorkspaceEnvironment>(`/environments/${environmentId}/restart`, { method: 'POST' }),
 
   extendEnvironment: (environmentId: string) =>
     request<WorkspaceEnvironment>(`/environments/${environmentId}/extend`, {

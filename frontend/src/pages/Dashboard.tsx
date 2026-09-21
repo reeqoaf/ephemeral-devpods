@@ -1,109 +1,25 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link as RouterLink } from 'react-router'
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  CircularProgress,
-  Link,
-  Stack,
-  Typography,
-} from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
+import { useSearchParams } from 'react-router'
+import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded'
+import SearchOffRoundedIcon from '@mui/icons-material/SearchOffRounded'
 import { api } from '../api/client'
-import type { EnvironmentStatus, WorkspaceEnvironment } from '../api/types'
-import { EditorActions } from '../components/EditorActions'
-import { StopEnvironmentButton } from '../components/StopEnvironmentButton'
+import { EnvironmentCard } from '../components/EnvironmentCard'
+import { EnvironmentToolbar } from '../components/EnvironmentToolbar'
+import { NewEnvironmentMenu } from '../components/NewEnvironmentMenu'
+import {
+  ALL,
+  cpuFilterOptions,
+  filterEnvironments,
+  isSettling,
+  memoryFilterOptions,
+  parseSortKey,
+  sortEnvironments,
+  type EnvironmentFilters,
+  type SortKey,
+} from '../lib/environments'
 import { Layout } from './Layout'
-
-const statusColor: Record<EnvironmentStatus, 'info' | 'success' | 'default' | 'error'> = {
-  Provisioning: 'info',
-  Running: 'success',
-  Expired: 'default',
-  Failed: 'error',
-}
-
-/** Poll quickly while something is still changing under the user: provisioning, or a tunnel not yet signed in. */
-function isSettling(env: WorkspaceEnvironment): boolean {
-  return (
-    env.status === 'Provisioning' ||
-    (env.status === 'Running' && !!env.tunnel && env.tunnel.phase !== 'Ready')
-  )
-}
-
-function timeRemaining(env: WorkspaceEnvironment): string {
-  if (env.status === 'Failed') return 'failed'
-  if (env.status === 'Expired') return 'expired'
-
-  const expiresAt = new Date(env.createdAt).getTime() + env.ttlMinutes * 60_000
-  const minutesLeft = Math.round((expiresAt - Date.now()) / 60_000)
-  if (minutesLeft <= 0) return 'expired'
-  if (minutesLeft < 60) return `${minutesLeft}m left`
-  return `${Math.round(minutesLeft / 60)}h left`
-}
-
-function EnvironmentCard({ env }: { env: WorkspaceEnvironment }) {
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography
-              variant="subtitle1"
-              noWrap
-              title={env.repoUrl}
-              sx={{ fontWeight: 700 }}
-            >
-              {env.repoUrl.replace(/^https?:\/\//, '')}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              created {new Date(env.createdAt).toLocaleString()}
-            </Typography>
-          </Box>
-          <Chip label={env.status} color={statusColor[env.status]} size="small" />
-        </Stack>
-
-        <Stack
-          direction="row"
-          sx={{ justifyContent: 'space-between', alignItems: 'center', mt: 2.5 }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {timeRemaining(env)}
-          </Typography>
-          <Stack direction="row" sx={{ alignItems: 'center', gap: 0.5 }}>
-            {env.publicUrl ? (
-              <Button
-                component={Link}
-                href={env.publicUrl}
-                target="_blank"
-                rel="noreferrer"
-                size="small"
-                endIcon={<OpenInNewRoundedIcon fontSize="small" />}
-              >
-                Open app
-              </Button>
-            ) : (
-              <Typography variant="body2" color="text.disabled">
-                not ready
-              </Typography>
-            )}
-            {env.status !== 'Expired' && <StopEnvironmentButton env={env} />}
-          </Stack>
-        </Stack>
-
-        {env.status === 'Running' && env.tunnel && (
-          <Box sx={{ mt: 2 }}>
-            <EditorActions tunnel={env.tunnel} />
-          </Box>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 function EmptyState() {
   return (
@@ -120,9 +36,26 @@ function EmptyState() {
       <RocketLaunchRoundedIcon sx={{ fontSize: 48, opacity: 0.5 }} />
       <Typography variant="h6">No environments yet</Typography>
       <Typography variant="body2">Paste a public repo to spin up your first one.</Typography>
-      <Button component={RouterLink} to="/new" variant="contained" startIcon={<AddRoundedIcon />}>
-        New environment
-      </Button>
+      <NewEnvironmentMenu />
+    </Box>
+  )
+}
+
+function NoMatches({ onClear }: { onClear: () => void }) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 1.5,
+        py: 8,
+        color: 'text.secondary',
+      }}
+    >
+      <SearchOffRoundedIcon sx={{ fontSize: 40, opacity: 0.5 }} />
+      <Typography variant="h6">No environments match</Typography>
+      <Button onClick={onClear}>Clear filters</Button>
     </Box>
   )
 }
@@ -134,20 +67,66 @@ export function Dashboard() {
     refetchInterval: (query) => (query.state.data?.some(isSettling) ? 3000 : 15000),
   })
 
+  // Search, filters and sort live in the URL so they survive opening an environment and coming back.
+  const [params, setParams] = useSearchParams()
+  const query = params.get('q') ?? ''
+  const cpuParam = params.get('cpu') ?? ALL
+  const memoryParam = params.get('ram') ?? ALL
+  const sort = parseSortKey(params.get('sort'))
+
+  const cpuOptions = useMemo(() => cpuFilterOptions(environments ?? []), [environments])
+  const memoryOptions = useMemo(() => memoryFilterOptions(environments ?? []), [environments])
+
+  // A stale URL value (e.g. no environment has that size any more) must not leave the select blank.
+  const filters = useMemo<EnvironmentFilters>(
+    () => ({
+      query,
+      cpu: cpuOptions.some((option) => option.value === cpuParam) ? cpuParam : ALL,
+      memory: memoryOptions.some((option) => option.value === memoryParam) ? memoryParam : ALL,
+    }),
+    [query, cpuParam, memoryParam, cpuOptions, memoryOptions],
+  )
+
+  const visible = useMemo(
+    () => sortEnvironments(filterEnvironments(environments ?? [], filters), sort),
+    [environments, filters, sort],
+  )
+
+  const updateParams = (patch: Record<string, string>, defaults: Record<string, string>) =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        for (const [key, value] of Object.entries(patch)) {
+          if (value === defaults[key]) next.delete(key)
+          else next.set(key, value)
+        }
+        return next
+      },
+      { replace: true },
+    )
+
+  const updateFilters = (patch: Partial<EnvironmentFilters>) =>
+    updateParams(
+      {
+        ...(patch.query !== undefined && { q: patch.query }),
+        ...(patch.cpu !== undefined && { cpu: patch.cpu }),
+        ...(patch.memory !== undefined && { ram: patch.memory }),
+      },
+      { q: '', cpu: ALL, ram: ALL },
+    )
+
+  const updateSort = (key: SortKey) => updateParams({ sort: key }, { sort: 'newest' })
+
+  const hasEnvironments = !!environments && environments.length > 0
+
   return (
     <Layout>
-      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Stack
+        direction="row"
+        sx={{ justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 3 }}
+      >
         <Typography variant="h4">Your environments</Typography>
-        {environments && environments.length > 0 && (
-          <Button
-            component={RouterLink}
-            to="/new"
-            variant="contained"
-            startIcon={<AddRoundedIcon />}
-          >
-            New environment
-          </Button>
-        )}
+        {hasEnvironments && <NewEnvironmentMenu />}
       </Stack>
 
       {isLoading && (
@@ -159,18 +138,35 @@ export function Dashboard() {
 
       {environments && environments.length === 0 && <EmptyState />}
 
-      {environments && environments.length > 0 && (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 2,
-          }}
-        >
-          {environments.map((env) => (
-            <EnvironmentCard key={env.environmentId} env={env} />
-          ))}
-        </Box>
+      {hasEnvironments && (
+        <>
+          <EnvironmentToolbar
+            filters={filters}
+            onFiltersChange={updateFilters}
+            sort={sort}
+            onSortChange={updateSort}
+            cpuOptions={cpuOptions}
+            memoryOptions={memoryOptions}
+            shown={visible.length}
+            total={environments.length}
+          />
+
+          {visible.length === 0 ? (
+            <NoMatches onClear={() => updateFilters({ query: '', cpu: ALL, memory: ALL })} />
+          ) : (
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))',
+                gap: 2,
+              }}
+            >
+              {visible.map((env) => (
+                <EnvironmentCard key={env.environmentId} env={env} />
+              ))}
+            </Box>
+          )}
+        </>
       )}
     </Layout>
   )
