@@ -70,3 +70,6 @@ frontend/build/
 
 # Docs (untracked for now)
 docs/
+
+# Claude Code local config and instructions
+.claude/
