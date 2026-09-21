@@ -8,14 +8,18 @@ namespace EphemeralDevpods.Functions.Functions.Environments;
 
 /// <summary>Restarts a running environment's container.</summary>
 public sealed class RestartEnvironment(
-    IEnvironmentRepository environments, EnvironmentLifecycle lifecycle, EnvironmentStatusSync statusSync)
+    IEnvironmentRepository environments, EnvironmentLifecycle lifecycle, EnvironmentStatusSync statusSync,
+    ProvisioningGate gate)
 {
     [Function("RestartEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "environments/{environmentId}/restart")] HttpRequestData req,
         string environmentId, FunctionContext context, CancellationToken ct)
     {
-        var environment = await environments.GetAsync(CurrentUser.GetId(context), environmentId, ct); // §6: ownership check
+        var owner = CurrentUser.GetId(context);
+        await gate.EnsureAllowedAsync(owner, ct);
+
+        var environment = await environments.GetAsync(owner, environmentId, ct); // §6: ownership check
         if (environment is null)
         {
             return await req.NotFoundAsync(ct);

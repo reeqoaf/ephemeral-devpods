@@ -17,6 +17,7 @@ public sealed class UserTableEntity : ITableEntity
     public string DisplayName { get; set; } = "";
     public string? Email { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public bool IsAdmin { get; set; }
 
     public static UserTableEntity FromDomain(User user) => new()
     {
@@ -24,6 +25,7 @@ public sealed class UserTableEntity : ITableEntity
         DisplayName = user.DisplayName,
         Email = user.Email,
         CreatedAt = user.CreatedAt,
+        IsAdmin = user.IsAdmin,
     };
 
     public User ToDomain() => new()
@@ -32,5 +34,6 @@ public sealed class UserTableEntity : ITableEntity
         DisplayName = DisplayName,
         Email = Email,
         CreatedAt = CreatedAt,
+        IsAdmin = IsAdmin,
     };
 }

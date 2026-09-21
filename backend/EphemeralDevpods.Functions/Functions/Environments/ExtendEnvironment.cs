@@ -6,7 +6,7 @@ using Microsoft.Azure.Functions.Worker.Http;
 
 namespace EphemeralDevpods.Functions.Functions.Environments;
 
-public sealed class ExtendEnvironment(IEnvironmentRepository environments)
+public sealed class ExtendEnvironment(IEnvironmentRepository environments, ProvisioningGate gate)
 {
     private const int ExtendByMinutes = 60;
 
@@ -16,6 +16,8 @@ public sealed class ExtendEnvironment(IEnvironmentRepository environments)
         string environmentId, FunctionContext context, CancellationToken ct)
     {
         var owner = CurrentUser.GetId(context);
+        await gate.EnsureAllowedAsync(owner, ct);
+
         var environment = await environments.GetAsync(owner, environmentId, ct); // §6: per-endpoint ownership check
         if (environment is null)
         {

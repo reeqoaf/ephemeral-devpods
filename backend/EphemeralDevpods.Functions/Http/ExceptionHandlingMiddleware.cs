@@ -49,6 +49,7 @@ public sealed class ExceptionHandlingMiddleware(ILogger<ExceptionHandlingMiddlew
             var (status, message) = ex switch
             {
                 UnauthorizedException => (HttpStatusCode.Unauthorized, "Authentication required."),
+                ForbiddenException => (HttpStatusCode.Forbidden, ex.Message),
                 ConflictException => (HttpStatusCode.Conflict, ex.Message),
                 UserInputException => (HttpStatusCode.BadRequest, ex.Message),
                 JsonException => (HttpStatusCode.BadRequest, "Request body is not valid JSON."),

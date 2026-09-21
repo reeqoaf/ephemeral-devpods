@@ -8,10 +8,11 @@ namespace EphemeralDevpods.Functions.Functions.Me;
 
 public sealed record LinkedIdentityResponse(string Provider, string DisplayName, DateTimeOffset LinkedAt);
 
-public sealed record MeResponse(string UserId, string DisplayName, string? Email, IReadOnlyList<LinkedIdentityResponse> Identities);
+public sealed record MeResponse(
+    string UserId, string DisplayName, string? Email, bool CanProvision, IReadOnlyList<LinkedIdentityResponse> Identities);
 
 /// <summary>The signed-in user's profile and linked identities. The SPA uses a 401 here to mean "signed out".</summary>
-public sealed class GetMe(AccountService accounts)
+public sealed class GetMe(AccountService accounts, ProvisioningGate gate)
 {
     [Function("GetMe")]
     public async Task<HttpResponseData> Run(
@@ -24,7 +25,8 @@ public sealed class GetMe(AccountService accounts)
             .ToList();
         return await req.WriteJsonAsync(
             HttpStatusCode.OK,
-            new MeResponse(account.User.UserId, account.User.DisplayName, account.User.Email, identities),
+            new MeResponse(
+                account.User.UserId, account.User.DisplayName, account.User.Email, gate.IsAllowed(account.User), identities),
             ct);
     }
 }

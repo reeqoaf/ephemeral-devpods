@@ -5,6 +5,9 @@ namespace EphemeralDevpods.Core.Auth;
 /// <summary>Caller is not authenticated (no or invalid session). Maps to 401.</summary>
 public sealed class UnauthorizedException(string message = "Authentication required.") : Exception(message);
 
+/// <summary>The caller is signed in but not allowed to do this (e.g. not an admin). Maps to 403.</summary>
+public sealed class ForbiddenException(string message = "You don't have access to do this.") : Exception(message);
+
 /// <summary>Base for failures caused by a conflict with existing state; the message is safe to return as a 409.</summary>
 public abstract class ConflictException(string message) : Exception(message);
 

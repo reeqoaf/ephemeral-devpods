@@ -77,5 +77,7 @@ export interface Me {
   userId: string
   displayName: string
   email: string | null
+  /** False when the backend restricts running environments to admins and this user isn't one. */
+  canProvision: boolean
   identities: LinkedIdentity[]
 }

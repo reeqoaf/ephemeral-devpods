@@ -18,6 +18,7 @@ import {
 } from '@mui/material'
 import RocketLaunchRoundedIcon from '@mui/icons-material/RocketLaunchRounded'
 import { api } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import type { RepoCheck, TunnelProvider } from '../api/types'
 import {
   hostPortErrors,
@@ -98,6 +99,7 @@ function RepoSummary({ check }: { check: RepoCheck }) {
 
 export function NewEnvironment() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const queryClient = useQueryClient()
 
   const [step, setStep] = useState(0)
@@ -181,6 +183,12 @@ export function NewEnvironment() {
             </Step>
           ))}
         </Stepper>
+
+        {user && !user.canProvision && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Admin access is required to run environments.
+          </Alert>
+        )}
 
         <Card variant="outlined">
           <CardContent sx={{ p: 3 }}>

@@ -19,13 +19,16 @@ public sealed class CreateEnvironment(
     HostPortSelector ports,
     IComputeProvisioner provisioner,
     IEnvironmentRepository environments,
-    IProvisioningQueue provisioningQueue)
+    IProvisioningQueue provisioningQueue,
+    ProvisioningGate gate)
 {
     [Function("CreateEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "environments")] HttpRequestData req,
         FunctionContext context, CancellationToken ct)
     {
+        await gate.EnsureAllowedAsync(CurrentUser.GetId(context), ct);
+
         var body = await req.ReadJsonAsync<CreateEnvironmentRequest>(ct);
         if (string.IsNullOrWhiteSpace(body?.RepoUrl))
         {

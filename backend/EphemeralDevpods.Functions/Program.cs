@@ -120,6 +120,7 @@ builder.Services.AddTransient<IOAuthProvider>(sp => sp.GetRequiredService<GitHub
 builder.Services.AddCompute(builder.Configuration);
 
 builder.Services.AddSingleton<EnvironmentStatusSync>();
+builder.Services.AddSingleton<ProvisioningGate>();
 builder.Services.AddSingleton<EnvironmentLifecycle>();
 builder.Services.AddSingleton<EnvironmentProvisioning>();
 builder.Services.AddSingleton<RepoInspector>();
