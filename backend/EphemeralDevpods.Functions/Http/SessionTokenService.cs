@@ -86,24 +86,18 @@ public sealed class SessionTokenService(AuthOptions options, TimeProvider clock)
 
     private async Task<IDictionary<string, object>?> ValidateAsync(string token, string audience)
     {
-        try
+        // ValidateTokenAsync reports bad/forged/expired tokens via IsValid rather than throwing.
+        var result = await _handler.ValidateTokenAsync(token, new TokenValidationParameters
         {
-            var result = await _handler.ValidateTokenAsync(token, new TokenValidationParameters
-            {
-                ValidIssuer = Issuer,
-                ValidAudience = audience,
-                IssuerSigningKey = _key,
-                ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
-                ValidateLifetime = true,
-                // Use the injected clock, not DateTime.UtcNow, so expiry is testable.
-                LifetimeValidator = (_, expires, _, _) => expires is not null && expires > clock.GetUtcNow().UtcDateTime,
-                ClockSkew = TimeSpan.Zero,
-            });
-            return result.IsValid ? result.Claims : null;
-        }
-        catch (Exception ex) when (ex is ArgumentException or SecurityTokenException)
-        {
-            return null;
-        }
+            ValidIssuer = Issuer,
+            ValidAudience = audience,
+            IssuerSigningKey = _key,
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+            ValidateLifetime = true,
+            // Use the injected clock, not DateTime.UtcNow, so expiry is testable.
+            LifetimeValidator = (_, expires, _, _) => expires is not null && expires > clock.GetUtcNow().UtcDateTime,
+            ClockSkew = TimeSpan.Zero,
+        });
+        return result.IsValid ? result.Claims : null;
     }
 }

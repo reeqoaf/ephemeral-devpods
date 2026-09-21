@@ -49,18 +49,9 @@ public sealed class GitHubOAuthProvider(HttpClient http, GitHubOAuthOptions opti
             throw new OAuthExchangeException($"GitHub token endpoint returned {(int)tokenResponse.StatusCode}: {tokenBody}");
         }
 
-        string? accessToken;
-        try
-        {
-            // GitHub answers 200 even for failures, with { "error": ... } in the body.
-            using var doc = JsonDocument.Parse(tokenBody);
-            accessToken = doc.RootElement.TryGetProperty("access_token", out var value) ? value.GetString() : null;
-        }
-        catch (JsonException ex)
-        {
-            throw new OAuthExchangeException("GitHub token response was not valid JSON.", ex);
-        }
-
+        // GitHub answers 200 even for failures, with { "error": ... } in the body.
+        using var tokenDoc = JsonDocument.Parse(tokenBody);
+        var accessToken = tokenDoc.RootElement.TryGetProperty("access_token", out var value) ? value.GetString() : null;
         if (string.IsNullOrEmpty(accessToken))
         {
             throw new OAuthExchangeException($"GitHub token response had no access_token: {tokenBody}");

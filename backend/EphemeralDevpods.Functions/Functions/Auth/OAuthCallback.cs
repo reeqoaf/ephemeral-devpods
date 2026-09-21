@@ -5,16 +5,15 @@ using EphemeralDevpods.Core.Models;
 using EphemeralDevpods.Functions.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Logging;
 
 namespace EphemeralDevpods.Functions.Functions.Auth;
 
 /// <summary>
 /// The provider redirects the browser here with a code. The browser is mid-navigation, so every outcome —
-/// including expected failures — is a redirect back into the SPA (/login or /settings, with ?error=), not JSON.
+/// including failures — is a redirect back into the SPA (/login or /settings, with ?error=), not JSON.
+/// Exceptions are turned into those redirects by <see cref="ExceptionHandlingMiddleware"/> via <see cref="ErrorRedirect"/>.
 /// </summary>
-public sealed class OAuthCallback(
-    OAuthFlow flow, AccountService accounts, SessionTokenService tokens, AuthOptions options, ILogger<OAuthCallback> logger)
+public sealed class OAuthCallback(OAuthFlow flow, AccountService accounts, SessionTokenService tokens, AuthOptions options)
 {
     [Function("OAuthCallback")]
     [AllowAnonymousAccess]
@@ -22,7 +21,8 @@ public sealed class OAuthCallback(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "auth/callback/{provider}")] HttpRequestData req,
         string provider, FunctionContext context, CancellationToken ct)
     {
-        var oauthProvider = flow.Resolve(provider);
+        var oauthProvider = flow.Resolve(provider); // unknown provider -> 404 from the JSON path, before we mark this a navigation
+        ErrorRedirect.Set(context, "/login");
 
         var stateCookie = req.GetCookie(SessionTokenService.StateCookie);
         var saved = stateCookie is null ? null : await tokens.ValidateStateAsync(stateCookie);
@@ -41,40 +41,25 @@ public sealed class OAuthCallback(
         }
 
         var failureTarget = saved.Mode == OAuthFlowMode.Link ? "/settings" : "/login";
+        ErrorRedirect.Set(context, failureTarget);
+
         var code = req.Query["code"];
         if (req.Query["error"] is not null || string.IsNullOrEmpty(code))
         {
             return Finish(OAuthFlow.Redirect(req, $"{failureTarget}?error=access_denied"));
         }
 
-        ExternalIdentity identity;
-        try
-        {
-            identity = await oauthProvider.ExchangeAsync(code, saved.CodeVerifier, options.RedirectUri(oauthProvider.Provider), ct);
-        }
-        catch (OAuthExchangeException ex)
-        {
-            logger.LogWarning(ex, "OAuth code exchange failed for {Provider}", oauthProvider.Provider);
-            return Finish(OAuthFlow.Redirect(req, $"{failureTarget}?error=provider_error"));
-        }
+        var identity = await oauthProvider.ExchangeAsync(code, saved.CodeVerifier, options.RedirectUri(oauthProvider.Provider), ct);
 
         return saved.Mode == OAuthFlowMode.Link
             ? Finish(await CompleteLinkAsync(req, context, saved, identity, ct))
-            : Finish(await CompleteLoginAsync(req, oauthProvider.Provider, saved, identity, ct));
+            : Finish(await CompleteLoginAsync(req, saved, identity, ct));
     }
 
     private async Task<HttpResponseData> CompleteLoginAsync(
-        HttpRequestData req, IdentityProvider provider, OAuthState saved, ExternalIdentity identity, CancellationToken ct)
+        HttpRequestData req, OAuthState saved, ExternalIdentity identity, CancellationToken ct)
     {
-        User user;
-        try
-        {
-            user = await accounts.SignInAsync(identity, ct);
-        }
-        catch (IdentityNotLinkedException)
-        {
-            return OAuthFlow.Redirect(req, $"/login?error={provider.ToString().ToLowerInvariant()}_not_linked");
-        }
+        var user = await accounts.SignInAsync(identity, ct);
 
         var response = OAuthFlow.Redirect(req, saved.ReturnUrl);
         response.SetCookie(
@@ -94,19 +79,7 @@ public sealed class OAuthCallback(
             return OAuthFlow.Redirect(req, "/login?error=session_mismatch");
         }
 
-        try
-        {
-            await accounts.LinkAsync(currentUser, identity, ct);
-        }
-        catch (IdentityAlreadyLinkedException)
-        {
-            return OAuthFlow.Redirect(req, "/settings?error=already_linked");
-        }
-        catch (AccountRuleException)
-        {
-            return OAuthFlow.Redirect(req, "/settings?error=provider_already_linked");
-        }
-
+        await accounts.LinkAsync(currentUser, identity, ct);
         return OAuthFlow.Redirect(req, saved.ReturnUrl);
     }
 
