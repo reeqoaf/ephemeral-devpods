@@ -1,5 +1,5 @@
 using EphemeralDevpods.Core.Models;
-using EphemeralDevpods.Infrastructure.Provisioning.LocalDocker;
+using EphemeralDevpods.Infrastructure.Provisioning;
 
 namespace EphemeralDevpods.Tests.Provisioning;
 
@@ -55,5 +55,28 @@ public class EntrypointScriptTests
         var script = Build(postCreate: ["echo", "hello world"]);
 
         Assert.Contains("'echo' 'hello world'", script);
+    }
+
+    [Fact]
+    public void Keeps_the_tunnel_as_the_main_process_by_default()
+    {
+        var script = Build();
+
+        Assert.Contains("exec /opt/ephemeral-devpods-vscode-cli/code tunnel", script);
+        Assert.DoesNotContain("trap ", script);
+    }
+
+    [Fact]
+    public void Unregister_variant_runs_the_tunnel_as_a_child_and_unregisters_on_sigterm()
+    {
+        var script = EntrypointScript.Build(
+            "https://github.com/owner/repo", [], [], "epd-12345678", TunnelProvider.GitHub, unregisterOnTerminate: true);
+
+        Assert.DoesNotContain("exec /opt/ephemeral-devpods-vscode-cli/code tunnel", script);
+        Assert.Contains(
+            "{ /opt/ephemeral-devpods-vscode-cli/code tunnel --name 'epd-12345678' --accept-server-license-terms & _tunnel_pid=$!;",
+            script);
+        Assert.Contains("trap '/opt/ephemeral-devpods-vscode-cli/code tunnel unregister", script);
+        Assert.Contains("TERM INT; wait $_tunnel_pid; }", script);
     }
 }

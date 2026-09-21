@@ -1,5 +1,5 @@
 using EphemeralDevpods.Core.Provisioning;
-using EphemeralDevpods.Infrastructure.Provisioning.LocalDocker;
+using EphemeralDevpods.Infrastructure.Provisioning;
 
 namespace EphemeralDevpods.Tests.Provisioning;
 
@@ -10,68 +10,41 @@ public class TunnelLogParserTests
         "To grant access to the server, please log into https://github.com/login/device and use code 63B6-E507";
 
     private const string LoginRequired = TunnelLogParser.LoginRequiredMarker;
+
     private const string Starting = TunnelLogParser.StartingMarker;
 
     [Fact]
-    public void Awaiting_login_exposes_the_device_code_and_url()
+    public void Connected_when_the_tunnel_link_is_printed_after_the_starting_marker()
     {
-        var state = TunnelLogParser.Parse($"Cloning into '/workspace'...\n{LoginRequired}\n{PromptLine}\n");
+        var logs = $"{Starting}\nOpen this link in your browser https://vscode.dev/tunnel/epd-12345678/workspace";
 
-        Assert.Equal(TunnelPhase.AwaitingLogin, state.Phase);
-        Assert.Equal("63B6-E507", state.DeviceCode);
-        Assert.Equal("https://github.com/login/device", state.VerificationUrl);
+        Assert.True(TunnelLogParser.IsConnectedInLogs(logs, "epd-12345678"));
     }
 
     [Fact]
-    public void Newest_code_wins_after_an_expired_one_is_retried()
+    public void Not_connected_before_the_link_appears()
     {
-        var retried = PromptLine.Replace("63B6-E507", "AAAA-1111");
-
-        var state = TunnelLogParser.Parse($"{LoginRequired}\n{PromptLine}\n{LoginRequired}\n{retried}\n");
-
-        Assert.Equal(TunnelPhase.AwaitingLogin, state.Phase);
-        Assert.Equal("AAAA-1111", state.DeviceCode);
+        Assert.False(TunnelLogParser.IsConnectedInLogs($"{Starting}\nConnecting to tunnel service", "epd-12345678"));
     }
 
     [Fact]
-    public void Starting_marker_after_the_prompt_means_login_is_done()
+    public void A_link_from_before_the_latest_restart_does_not_count()
     {
-        var state = TunnelLogParser.Parse($"{LoginRequired}\n{PromptLine}\n{Starting}\n");
+        var logs = $"{Starting}\nhttps://vscode.dev/tunnel/epd-12345678/workspace\n{LoginRequired}\n{Starting}\nstarting again";
 
-        Assert.Equal(TunnelPhase.Starting, state.Phase);
-        Assert.Null(state.DeviceCode);
+        Assert.False(TunnelLogParser.IsConnectedInLogs(logs, "epd-12345678"));
     }
 
     [Fact]
-    public void No_login_marker_means_the_tunnel_is_just_starting()
+    public void Another_tunnels_link_does_not_count()
     {
-        Assert.Equal(TunnelPhase.Starting, TunnelLogParser.Parse($"{Starting}\n").Phase);
-        Assert.Equal(TunnelPhase.Starting, TunnelLogParser.Parse("").Phase);
+        Assert.False(TunnelLogParser.IsConnectedInLogs(
+            $"{Starting}\nhttps://vscode.dev/tunnel/epd-99999999/workspace", "epd-12345678"));
     }
 
     [Fact]
-    public void Login_marker_without_a_prompt_yet_is_still_starting()
+    public void Not_connected_without_the_starting_marker()
     {
-        var state = TunnelLogParser.Parse($"{LoginRequired}\n");
-
-        Assert.Equal(TunnelPhase.Starting, state.Phase);
-        Assert.Null(state.DeviceCode);
+        Assert.False(TunnelLogParser.IsConnectedInLogs("https://vscode.dev/tunnel/epd-12345678/workspace", "epd-12345678"));
     }
-
-    [Fact]
-    public void A_prompt_from_before_the_latest_marker_is_ignored()
-    {
-        var state = TunnelLogParser.Parse($"{PromptLine}\n{LoginRequired}\n");
-
-        Assert.Equal(TunnelPhase.Starting, state.Phase);
-    }
-
-    [Theory]
-    [InlineData("{\"tunnel\":null,\"service_installed\":false}", false)]
-    [InlineData("{\"tunnel\":{\"name\":\"epd-1234abcd\"},\"service_installed\":false}", true)]
-    [InlineData("", false)]
-    [InlineData("sh: /opt/ephemeral-devpods-vscode-cli/code: not found", false)]
-    [InlineData("[1,2,3]", false)]
-    public void IsConnected_reads_the_status_json(string statusJson, bool expected) =>
-        Assert.Equal(expected, TunnelLogParser.IsConnected(statusJson));
 }

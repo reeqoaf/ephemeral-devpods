@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EphemeralDevpods.Core.Provisioning;
 
-namespace EphemeralDevpods.Infrastructure.Provisioning.LocalDocker;
+namespace EphemeralDevpods.Infrastructure.Provisioning;
 
 /// <summary>
 /// Derives tunnel state from a container's log output and from `code tunnel status`. The entrypoint
@@ -37,6 +37,18 @@ public static partial class TunnelLogParser
         return match is null
             ? new TunnelState(TunnelPhase.Starting)
             : new TunnelState(TunnelPhase.AwaitingLogin, match.Groups["code"].Value, match.Groups["url"].Value);
+    }
+
+    /// <summary>
+    /// For backends that can't exec `code tunnel status` (ACI exec is one argument-less process): the CLI prints the
+    /// tunnel's vscode.dev link once it is registered and connected. Only counts output after the entrypoint's own
+    /// "tunnel starting" marker, so a link from before a restart doesn't count.
+    /// </summary>
+    public static bool IsConnectedInLogs(string logs, string tunnelName)
+    {
+        var startingAt = logs.LastIndexOf(StartingMarker, StringComparison.Ordinal);
+        return startingAt >= 0
+            && logs.IndexOf($"vscode.dev/tunnel/{tunnelName}", startingAt, StringComparison.Ordinal) >= 0;
     }
 
     /// <summary>`code tunnel status` prints `{"tunnel":null,...}` until a tunnel is registered.</summary>

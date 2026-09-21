@@ -22,7 +22,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
         WorkspaceEnvironment environment, EnvironmentSpec spec, CancellationToken ct)
     {
         var imageRef = await ResolveImageAsync(environment, spec, ct);
-        var tunnelName = TunnelNameFor(environment.EnvironmentId);
+        var tunnelName = EnvironmentNaming.TunnelNameFor(environment.EnvironmentId);
         var entrypointScript = EntrypointScript.Build(
             environment.RepoUrl, spec.PostCreateCommand, spec.PostAttachCommand, tunnelName,
             environment.TunnelProvider ?? TunnelProvider.GitHub);
@@ -189,9 +189,6 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
             return null;
         }
     }
-
-    /// <summary>Short and stable so it fits in the vscode.dev URL; the 8-char prefix of the GUID is unique enough per account.</summary>
-    private static string TunnelNameFor(string environmentId) => $"epd-{environmentId[..8]}";
 
     /// <exception cref="KeyNotFoundException">No container exists for this environment.</exception>
     private async Task<ContainerListResponse> FindContainerAsync(string environmentId, CancellationToken ct) =>

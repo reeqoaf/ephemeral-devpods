@@ -1,7 +1,7 @@
 using System.Text;
 using EphemeralDevpods.Core.Models;
 
-namespace EphemeralDevpods.Infrastructure.Provisioning.LocalDocker;
+namespace EphemeralDevpods.Infrastructure.Provisioning;
 
 /// <summary>
 /// Builds the shell script a container runs as its entrypoint: clone the repo, run the devcontainer's
@@ -35,9 +35,14 @@ public static class EntrypointScript
         "-o /tmp/vscode_cli.tar.gz && " +
         "tar -xf /tmp/vscode_cli.tar.gz -C " + CodeCliDirectory + "))";
 
+    /// <param name="unregisterOnTerminate">
+    /// Runs the tunnel as a child instead of `exec`ing it, so the shell survives to catch SIGTERM and unregister the
+    /// tunnel first. For backends that can't exec `tunnel unregister` into the container on stop/delete (ACI); the
+    /// default keeps the tunnel as the container's main process.
+    /// </param>
     public static string Build(
         string repoUrl, IReadOnlyList<string> postCreateCommand, IReadOnlyList<string> postAttachCommand,
-        string tunnelName, TunnelProvider tunnelProvider)
+        string tunnelName, TunnelProvider tunnelProvider, bool unregisterOnTerminate = false)
     {
         // Clone + postCreateCommand are first-run setup. The marker is only written once both succeeded, so
         // a start after a failed setup retries it instead of launching a half-built workspace; a failed
@@ -67,7 +72,7 @@ public static class EntrypointScript
 
         return script
             .Append(" && ").Append(InstallCodeCliFragment)
-            .Append(" && ").Append(BuildTunnelFragment(tunnelName, tunnelProvider))
+            .Append(" && ").Append(BuildTunnelFragment(tunnelName, tunnelProvider, unregisterOnTerminate))
             .ToString();
     }
 
@@ -77,13 +82,17 @@ public static class EntrypointScript
     /// and the marker lines let <see cref="TunnelLogParser"/> tell "waiting for login" from "starting".
     /// The login persists in the container, so a restart skips straight to the tunnel.
     /// </summary>
-    private static string BuildTunnelFragment(string tunnelName, TunnelProvider tunnelProvider) =>
+    private static string BuildTunnelFragment(string tunnelName, TunnelProvider tunnelProvider, bool unregisterOnTerminate) =>
         $"until {CodeCliPath} tunnel user show >/dev/null 2>&1; do " +
         $"echo {ShellQuote(TunnelLogParser.LoginRequiredMarker)}; " +
         $"{CodeCliPath} tunnel user login --provider {ProviderArgument(tunnelProvider)} || sleep 2; " +
         "done && " +
         $"echo {ShellQuote(TunnelLogParser.StartingMarker)} && " +
-        $"exec {CodeCliPath} tunnel --name {ShellQuote(tunnelName)} --accept-server-license-terms";
+        (unregisterOnTerminate
+            ? $"{{ {CodeCliPath} tunnel --name {ShellQuote(tunnelName)} --accept-server-license-terms & _tunnel_pid=$!; " +
+              $"trap '{CodeCliPath} tunnel unregister >/dev/null 2>&1; kill $_tunnel_pid 2>/dev/null' TERM INT; " +
+              "wait $_tunnel_pid; }"
+            : $"exec {CodeCliPath} tunnel --name {ShellQuote(tunnelName)} --accept-server-license-terms");
 
     private static string ProviderArgument(TunnelProvider provider) => provider switch
     {

@@ -16,10 +16,10 @@ public sealed class GitHubBuildContextFetcher(HttpClient httpClient) : IBuildCon
         CancellationToken ct)
     {
         var (owner, repo) = GitHubRepoUrl.Parse(repoUrl);
-        var resolvedContext = ResolvePath(devcontainerBaseDirectory, contextPath);
-        var resolvedDockerfile = ResolvePath(devcontainerBaseDirectory, dockerfilePath);
+        var resolvedContext = DevcontainerPaths.Resolve(devcontainerBaseDirectory, contextPath);
+        var resolvedDockerfile = DevcontainerPaths.Resolve(devcontainerBaseDirectory, dockerfilePath);
 
-        var dockerfilePathInContext = ReparentUnderContext(resolvedDockerfile, resolvedContext);
+        var dockerfilePathInContext = DevcontainerPaths.ReparentUnderContext(resolvedDockerfile, resolvedContext);
         if (dockerfilePathInContext is null)
         {
             throw new BuildContextNotFoundException(
@@ -53,7 +53,7 @@ public sealed class GitHubBuildContextFetcher(HttpClient httpClient) : IBuildCon
                     continue; // the wrapper directory entry itself
                 }
 
-                var newName = ReparentUnderContext(relativePath, resolvedContext);
+                var newName = DevcontainerPaths.ReparentUnderContext(relativePath, resolvedContext);
                 if (string.IsNullOrEmpty(newName))
                 {
                     continue;
@@ -74,56 +74,5 @@ public sealed class GitHubBuildContextFetcher(HttpClient httpClient) : IBuildCon
 
         output.Position = 0;
         return new BuildContext(output, dockerfilePathInContext);
-    }
-
-    /// <returns>
-    /// The path relative to the context folder, or null if the entry falls outside it.
-    /// </returns>
-    private static string? ReparentUnderContext(string repoRelativePath, string resolvedContext)
-    {
-        if (resolvedContext.Length == 0)
-        {
-            return repoRelativePath;
-        }
-
-        if (repoRelativePath == resolvedContext ||
-            !repoRelativePath.StartsWith(resolvedContext + "/", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        return repoRelativePath[(resolvedContext.Length + 1)..];
-    }
-
-    /// <summary>
-    /// Resolves a devcontainer.json-relative path (context or dockerfile — both resolved the same
-    /// way, independently, per §14) against the repo root, manually handling "."/".." segments.
-    /// Returns "" for the repo root.
-    /// </summary>
-    private static string ResolvePath(string baseDirectory, string relativePath)
-    {
-        var combined = string.IsNullOrEmpty(baseDirectory) ? relativePath : $"{baseDirectory}/{relativePath}";
-        var stack = new List<string>();
-
-        foreach (var segment in combined.Split('/', StringSplitOptions.RemoveEmptyEntries))
-        {
-            switch (segment)
-            {
-                case ".":
-                    break;
-                case "..":
-                    if (stack.Count > 0)
-                    {
-                        stack.RemoveAt(stack.Count - 1);
-                    }
-
-                    break;
-                default:
-                    stack.Add(segment);
-                    break;
-            }
-        }
-
-        return string.Join('/', stack);
     }
 }
