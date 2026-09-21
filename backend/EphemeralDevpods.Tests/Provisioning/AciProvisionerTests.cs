@@ -248,4 +248,21 @@ public class AciProvisionerTests
     {
         Assert.Equal(expected, AciStatus.Map(provisioning, instance));
     }
+
+    [Theory]
+    [InlineData("Waiting", EnvironmentStatus.Provisioning)] // after Start the group says Running while the image is still pulling
+    [InlineData("waiting", EnvironmentStatus.Provisioning)]
+    [InlineData("Running", EnvironmentStatus.Running)]
+    [InlineData(null, EnvironmentStatus.Running)]
+    public void A_running_group_is_only_running_once_its_container_is(string? containerState, EnvironmentStatus expected)
+    {
+        Assert.Equal(expected, AciStatus.Map("Succeeded", "Running", containerState));
+    }
+
+    [Fact]
+    public void A_waiting_container_does_not_mask_a_stopped_or_failed_group()
+    {
+        Assert.Equal(EnvironmentStatus.Stopped, AciStatus.Map("Succeeded", "Stopped", "Waiting"));
+        Assert.Equal(EnvironmentStatus.Failed, AciStatus.Map("Succeeded", "Failed", "Waiting"));
+    }
 }

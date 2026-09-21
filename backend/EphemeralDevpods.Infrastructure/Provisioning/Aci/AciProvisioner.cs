@@ -85,7 +85,9 @@ public sealed class AciProvisioner(ArmClient arm, AciOptions options) : ICompute
     {
         try
         {
-            await Group(environmentId).DeleteAsync(WaitUntil.Completed, ct);
+            // Started, not Completed: the service deletes the group fine, but the SDK then fails trying to read the
+            // resource out of the delete's empty final response (ArgumentNullException), which would fail every teardown.
+            await Group(environmentId).DeleteAsync(WaitUntil.Started, ct);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
@@ -115,7 +117,8 @@ public sealed class AciProvisioner(ArmClient arm, AciOptions options) : ICompute
     public async Task<EnvironmentStatus> GetStatusAsync(string environmentId, CancellationToken ct)
     {
         var group = await GetGroupAsync(environmentId, ct);
-        return AciStatus.Map(group.Data.ProvisioningState, group.Data.InstanceView?.State);
+        var containerState = group.Data.Containers.FirstOrDefault()?.InstanceView?.CurrentState?.State;
+        return AciStatus.Map(group.Data.ProvisioningState, group.Data.InstanceView?.State, containerState);
     }
 
     public async Task<TunnelState> GetTunnelStateAsync(string environmentId, CancellationToken ct)
@@ -207,7 +210,7 @@ public sealed class AciProvisioner(ArmClient arm, AciOptions options) : ICompute
     {
         try
         {
-            await Group(environmentId).DeleteAsync(WaitUntil.Completed);
+            await Group(environmentId).DeleteAsync(WaitUntil.Started);
         }
         catch (RequestFailedException)
         {

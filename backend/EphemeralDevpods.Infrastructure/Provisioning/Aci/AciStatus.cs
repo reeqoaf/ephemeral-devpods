@@ -7,7 +7,11 @@ public static class AciStatus
 {
     /// <param name="provisioningState">ARM provisioning state of the group (Creating, Succeeded, Failed, ...).</param>
     /// <param name="instanceState">Instance-view state of the running group (Pending, Running, Stopped, Succeeded, Failed, ...); null until it exists.</param>
-    public static EnvironmentStatus Map(string? provisioningState, string? instanceState)
+    /// <param name="containerState">
+    /// Current state of the workspace container (Waiting, Running, Terminated). After a Start the group reports Running
+    /// within seconds while the container is still Waiting (pulling its image) for about a minute.
+    /// </param>
+    public static EnvironmentStatus Map(string? provisioningState, string? instanceState, string? containerState = null)
     {
         if (string.IsNullOrEmpty(instanceState))
         {
@@ -17,7 +21,7 @@ public static class AciStatus
 
         if (Is(instanceState, "Running"))
         {
-            return EnvironmentStatus.Running;
+            return Is(containerState, "Waiting") ? EnvironmentStatus.Provisioning : EnvironmentStatus.Running;
         }
 
         if (Is(instanceState, "Pending"))
