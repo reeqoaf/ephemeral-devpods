@@ -6,6 +6,7 @@ using EphemeralDevpods.Core.Parsing;
 using EphemeralDevpods.Core.Provisioning;
 using EphemeralDevpods.Core.Repositories;
 using EphemeralDevpods.Functions.Functions.Environments;
+using EphemeralDevpods.Functions.Http;
 using EphemeralDevpods.Infrastructure.Git;
 using EphemeralDevpods.Infrastructure.Provisioning.LocalDocker;
 using EphemeralDevpods.Infrastructure.Storage;
@@ -19,6 +20,7 @@ using OpenTelemetry;
 var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
+builder.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING")))
 {

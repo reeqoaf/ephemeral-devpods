@@ -1,3 +1,5 @@
+using EphemeralDevpods.Core.Git;
+
 namespace EphemeralDevpods.Infrastructure.Git;
 
 /// <summary>Parses a github.com repo URL into owner/repo, shared by the fetchers below.</summary>
@@ -8,13 +10,13 @@ internal static class GitHubRepoUrl
         if (!Uri.TryCreate(repoUrl, UriKind.Absolute, out var uri) ||
             !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException($"Only github.com repo URLs are supported (got: {repoUrl}).", nameof(repoUrl));
+            throw new InvalidRepoUrlException($"Only github.com repo URLs are supported (got: {repoUrl}).");
         }
 
         var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length < 2)
         {
-            throw new ArgumentException($"Could not parse owner/repo from URL: {repoUrl}", nameof(repoUrl));
+            throw new InvalidRepoUrlException($"Could not parse owner/repo from URL: {repoUrl}");
         }
 
         var owner = segments[0];

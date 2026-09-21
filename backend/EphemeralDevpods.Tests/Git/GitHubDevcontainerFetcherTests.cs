@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using EphemeralDevpods.Core.Git;
 using EphemeralDevpods.Infrastructure.Git;
 
 namespace EphemeralDevpods.Tests.Git;
@@ -92,7 +93,7 @@ public class GitHubDevcontainerFetcherTests
         var fetcher = new GitHubDevcontainerFetcher(new HttpClient(new StubHttpMessageHandler(
             _ => new HttpResponseMessage(HttpStatusCode.NotFound))));
 
-        await Assert.ThrowsAsync<ArgumentException>(() =>
+        await Assert.ThrowsAsync<InvalidRepoUrlException>(() =>
             fetcher.FetchAsync("https://gitlab.com/owner/repo", CancellationToken.None));
     }
 }

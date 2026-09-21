@@ -36,15 +36,7 @@ public sealed class CreateEnvironment(
             return await req.BadRequestAsync("repoUrl is required.", ct);
         }
 
-        DevcontainerFile? file;
-        try
-        {
-            file = await fileFetcher.FetchAsync(body.RepoUrl, ct);
-        }
-        catch (ArgumentException ex)
-        {
-            return await req.BadRequestAsync(ex.Message, ct);
-        }
+        var file = await fileFetcher.FetchAsync(body.RepoUrl, ct);
 
         if (file is null)
         {
@@ -52,15 +44,7 @@ public sealed class CreateEnvironment(
                 "No devcontainer.json found (checked .devcontainer/devcontainer.json and .devcontainer.json).", ct);
         }
 
-        EnvironmentSpec spec;
-        try
-        {
-            spec = parser.Parse(file.Content, file.BaseDirectory);
-        }
-        catch (DevcontainerParseException ex)
-        {
-            return await req.BadRequestAsync(ex.Message, ct);
-        }
+        var spec = parser.Parse(file.Content, file.BaseDirectory);
 
         var environment = new WorkspaceEnvironment
         {

@@ -21,7 +21,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${await response.text()}`)
+    const body = await response.json().catch(() => null)
+    throw new Error(body?.error ?? `Request failed (${response.status})`)
   }
 
   if (response.status === 204) {
