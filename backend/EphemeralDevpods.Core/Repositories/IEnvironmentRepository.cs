@@ -10,5 +10,8 @@ public interface IEnvironmentRepository
 
     Task<IReadOnlyList<WorkspaceEnvironment>> ListExpiringBeforeAsync(DateTimeOffset cutoff, CancellationToken ct);
 
+    /// <summary>Every owner's environments that haven't been torn down (anything but Expired).</summary>
+    Task<IReadOnlyList<WorkspaceEnvironment>> ListActiveAsync(CancellationToken ct);
+
     Task UpsertAsync(WorkspaceEnvironment environment, CancellationToken ct);
 }

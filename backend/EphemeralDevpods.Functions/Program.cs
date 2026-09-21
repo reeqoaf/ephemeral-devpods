@@ -118,5 +118,8 @@ builder.Services.AddSingleton<IDockerClient>(_ =>
 builder.Services.AddSingleton<IComputeProvisioner, LocalDockerProvisioner>();
 
 builder.Services.AddSingleton<EnvironmentStatusSync>();
+builder.Services.AddSingleton<EnvironmentLifecycle>();
+builder.Services.AddSingleton<RepoInspector>();
+builder.Services.AddSingleton<HostPortSelector>();
 
 builder.Build().Run();

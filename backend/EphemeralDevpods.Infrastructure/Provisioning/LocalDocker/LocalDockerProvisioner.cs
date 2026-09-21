@@ -1,4 +1,3 @@
-using System.Text;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using EphemeralDevpods.Core.Git;
@@ -17,21 +16,27 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
 {
     private const string EnvironmentIdLabel = "ephemeral-devpods.environmentId";
 
+    public bool PublishesHostPorts => true;
+
     public async Task<ProvisionResult> ProvisionAsync(
         WorkspaceEnvironment environment, EnvironmentSpec spec, CancellationToken ct)
     {
         var imageRef = await ResolveImageAsync(environment, spec, ct);
         var tunnelName = TunnelNameFor(environment.EnvironmentId);
-        var entrypointScript = BuildEntrypointScript(
-            environment.RepoUrl, spec.PostCreateCommand, spec.PostAttachCommand, tunnelName);
+        var entrypointScript = EntrypointScript.Build(
+            environment.RepoUrl, spec.PostCreateCommand, spec.PostAttachCommand, tunnelName,
+            environment.TunnelProvider ?? TunnelProvider.GitHub);
+
+        // Environments created before ports were selectable published each port at the same number on the host.
+        var portMappings = environment.PortMappings ?? PortMapping.Identity(spec.ForwardPorts);
 
         var exposedPorts = new Dictionary<string, EmptyStruct>();
         var portBindings = new Dictionary<string, IList<PortBinding>>();
-        foreach (var port in spec.ForwardPorts)
+        foreach (var mapping in portMappings)
         {
-            var key = $"{port}/tcp";
+            var key = $"{mapping.ContainerPort}/tcp";
             exposedPorts[key] = new EmptyStruct();
-            portBindings[key] = [new PortBinding { HostPort = port.ToString() }];
+            portBindings[key] = [new PortBinding { HostPort = mapping.HostPort.ToString() }];
         }
 
         var createResponse = await dockerClient.Containers.CreateContainerAsync(
@@ -44,7 +49,12 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
                 Cmd = [entrypointScript],
                 ExposedPorts = exposedPorts,
                 Labels = new Dictionary<string, string> { [EnvironmentIdLabel] = environment.EnvironmentId },
-                HostConfig = new HostConfig { PortBindings = portBindings },
+                HostConfig = new HostConfig
+                {
+                    PortBindings = portBindings,
+                    Memory = environment.MemoryMb is { } memoryMb ? memoryMb * 1024L * 1024L : 0,
+                    NanoCPUs = environment.CpuCores is { } cpuCores ? cpuCores * 1_000_000_000L : 0,
+                },
             },
             ct);
 
@@ -57,13 +67,13 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
             Type = ResourceType.Container,
             ProviderResourceId = createResponse.ID,
             Image = imageRef,
-            Port = spec.ForwardPorts.Count > 0 ? spec.ForwardPorts[0] : null,
+            Port = portMappings.Count > 0 ? portMappings[0].ContainerPort : null,
             Status = "Running",
         };
 
         return new ProvisionResult
         {
-            PublicUrl = spec.ForwardPorts.Count > 0 ? $"http://localhost:{spec.ForwardPorts[0]}" : "",
+            PublicUrl = portMappings.Count > 0 ? $"http://localhost:{portMappings[0].HostPort}" : "",
             AccessToken = "", // purely localhost-bound — no token needed, nothing is internet-reachable
             TunnelName = tunnelName,
             Resources = [resource],
@@ -81,10 +91,31 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
         }
     }
 
+    public async Task StopAsync(string environmentId, CancellationToken ct)
+    {
+        var container = await FindContainerAsync(environmentId, ct);
+
+        // A stopped container can't run `tunnel unregister`, so a Delete or TTL sweep of a stopped environment
+        // would leak its tunnel against the user's account limit. Start registers it again.
+        await UnregisterTunnelAsync(container, ct);
+        await dockerClient.Containers.StopContainerAsync(container.ID, new ContainerStopParameters(), ct);
+    }
+
+    public async Task StartAsync(string environmentId, CancellationToken ct)
+    {
+        var container = await FindContainerAsync(environmentId, ct);
+        await dockerClient.Containers.StartContainerAsync(container.ID, new ContainerStartParameters(), ct);
+    }
+
+    public async Task RestartAsync(string environmentId, CancellationToken ct)
+    {
+        var container = await FindContainerAsync(environmentId, ct);
+        await dockerClient.Containers.RestartContainerAsync(container.ID, new ContainerRestartParameters(), ct);
+    }
+
     public async Task<EnvironmentStatus> GetStatusAsync(string environmentId, CancellationToken ct)
     {
-        var container = (await FindContainersAsync(environmentId, ct)).FirstOrDefault()
-            ?? throw new KeyNotFoundException($"No local Docker container found for environment {environmentId}.");
+        var container = await FindContainerAsync(environmentId, ct);
 
         return container.State switch
         {
@@ -96,8 +127,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
 
     public async Task<TunnelState> GetTunnelStateAsync(string environmentId, CancellationToken ct)
     {
-        var container = (await FindContainersAsync(environmentId, ct)).FirstOrDefault()
-            ?? throw new KeyNotFoundException($"No local Docker container found for environment {environmentId}.");
+        var container = await FindContainerAsync(environmentId, ct);
 
         using var logs = await dockerClient.Containers.GetContainerLogsAsync(
             container.ID,
@@ -112,7 +142,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
             return fromLogs;
         }
 
-        var status = await ExecAsync(container.ID, [CodeCliPath, "tunnel", "status"], ct);
+        var status = await ExecAsync(container.ID, [EntrypointScript.CodeCliPath, "tunnel", "status"], ct);
         return status is not null && TunnelLogParser.IsConnected(status)
             ? new TunnelState(TunnelPhase.Ready)
             : fromLogs;
@@ -133,7 +163,7 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         try
         {
-            await ExecAsync(container.ID, [CodeCliPath, "tunnel", "unregister"], timeout.Token);
+            await ExecAsync(container.ID, [EntrypointScript.CodeCliPath, "tunnel", "unregister"], timeout.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -162,6 +192,11 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
 
     /// <summary>Short and stable so it fits in the vscode.dev URL; the 8-char prefix of the GUID is unique enough per account.</summary>
     private static string TunnelNameFor(string environmentId) => $"epd-{environmentId[..8]}";
+
+    /// <exception cref="KeyNotFoundException">No container exists for this environment.</exception>
+    private async Task<ContainerListResponse> FindContainerAsync(string environmentId, CancellationToken ct) =>
+        (await FindContainersAsync(environmentId, ct)).FirstOrDefault()
+        ?? throw new KeyNotFoundException($"No local Docker container found for environment {environmentId}.");
 
     private Task<IList<ContainerListResponse>> FindContainersAsync(string environmentId, CancellationToken ct) =>
         dockerClient.Containers.ListContainersAsync(
@@ -239,82 +274,4 @@ public sealed class LocalDockerProvisioner(IDockerClient dockerClient, IBuildCon
             ? (image[..lastColon], image[(lastColon + 1)..])
             : (image, "latest");
     }
-
-    /// <summary>
-    /// Always downloads the standalone VS Code CLI fresh and invokes it by absolute path,
-    /// deliberately bypassing PATH — devcontainer base images often already have a placeholder
-    /// `code` script on PATH that reports "not installed" until the real server connects, so a
-    /// `command -v code` check finds that stub instead of the real thing. `cli-alpine-<arch>` is
-    /// the musl build; it's Microsoft's own recommendation for containers and runs fine on
-    /// glibc images too. Requires curl + tar in the base image (true of the standard ones).
-    /// </summary>
-    private const string InstallCodeCliFragment =
-        "mkdir -p /opt/ephemeral-devpods-vscode-cli && " +
-        "case \"$(uname -m)\" in " +
-        "aarch64|arm64) _cli_arch=arm64 ;; " +
-        "*) _cli_arch=x64 ;; " + // no 32-bit ARM build is published
-        "esac && " +
-        "curl -Ls \"https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-$_cli_arch\" " +
-        "-o /tmp/vscode_cli.tar.gz && " +
-        "tar -xf /tmp/vscode_cli.tar.gz -C /opt/ephemeral-devpods-vscode-cli";
-
-    private const string CodeCliPath = "/opt/ephemeral-devpods-vscode-cli/code";
-
-    /// <summary>
-    /// Login is its own step before the tunnel: chaining `user login` inside `code tunnel` makes the CLI
-    /// exit right after authenticating. The loop re-prompts (with a fresh device code) if a code expires,
-    /// and the marker lines let <see cref="TunnelLogParser"/> tell "waiting for login" from "starting".
-    /// </summary>
-    private static string BuildTunnelFragment(string tunnelName) =>
-        $"until {CodeCliPath} tunnel user show >/dev/null 2>&1; do " +
-        $"echo {ShellQuote(TunnelLogParser.LoginRequiredMarker)}; " +
-        $"{CodeCliPath} tunnel user login --provider github || sleep 2; " +
-        "done && " +
-        $"echo {ShellQuote(TunnelLogParser.StartingMarker)} && " +
-        $"exec {CodeCliPath} tunnel --name {ShellQuote(tunnelName)} --accept-server-license-terms";
-
-    private static string BuildEntrypointScript(
-        string repoUrl, IReadOnlyList<string> postCreateCommand, IReadOnlyList<string> postAttachCommand,
-        string tunnelName)
-    {
-        var script = new StringBuilder("set -e; ")
-            .Append($"git clone {ShellQuote(repoUrl)} /workspace && cd /workspace");
-
-        var postCreateFragment = BuildShellFragment(postCreateCommand);
-        if (postCreateFragment.Length > 0)
-        {
-            script.Append(" && ").Append(postCreateFragment);
-        }
-
-        // Backgrounded (never blocks the chain) — this is where devcontainer.json conventionally
-        // puts a dev-server start command, since postCreateCommand is meant to finish (setup) and
-        // the container's foreground/main process needs to stay the VS Code tunnel below.
-        var postAttachFragment = BuildShellFragment(postAttachCommand);
-        if (postAttachFragment.Length > 0)
-        {
-            script.Append(" && (").Append(postAttachFragment).Append(" &)");
-        }
-
-        return script
-            .Append(" && ").Append(InstallCodeCliFragment)
-            .Append(" && ").Append(BuildTunnelFragment(tunnelName))
-            .ToString();
-    }
-
-    /// <summary>
-    /// devcontainer.json's postCreateCommand/postAttachCommand string form is one raw shell
-    /// command (interpreted as-authored); their array form is argv tokens for a single exec (no
-    /// shell involved). Since both get spliced into one outer `sh -c` here, string form (always
-    /// exactly 1 element) must stay unquoted so its own shell syntax still works, while array
-    /// form's tokens each need quoting so embedded spaces don't get re-split.
-    /// </summary>
-    private static string BuildShellFragment(IReadOnlyList<string> command) =>
-        command.Count switch
-        {
-            0 => "",
-            1 => command[0],
-            _ => string.Join(' ', command.Select(ShellQuote)),
-        };
-
-    private static string ShellQuote(string value) => $"'{value.Replace("'", "'\\''")}'";
 }

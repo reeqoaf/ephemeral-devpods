@@ -1,9 +1,7 @@
-using EphemeralDevpods.Core.Git;
+namespace EphemeralDevpods.Core.Git;
 
-namespace EphemeralDevpods.Infrastructure.Git;
-
-/// <summary>Parses a github.com repo URL into owner/repo, shared by the fetchers below.</summary>
-internal static class GitHubRepoUrl
+/// <summary>Parses a github.com repo URL into owner/repo (used by the fetchers and the repo check).</summary>
+public static class GitHubRepoUrl
 {
     public static (string Owner, string Repo) Parse(string repoUrl)
     {

@@ -6,7 +6,7 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import LaptopMacRoundedIcon from '@mui/icons-material/LaptopMacRounded'
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
-import type { TunnelInfo } from '../api/types'
+import type { TunnelInfo, TunnelProvider } from '../api/types'
 
 /** Masked until revealed, so the code isn't shown to anyone glancing at (or screen-sharing) the dashboard. */
 function DeviceCode({ code }: { code: string }) {
@@ -51,20 +51,24 @@ function DeviceCode({ code }: { code: string }) {
 
 /**
  * Web/Local editor buttons for a running environment, or — until the tunnel is signed in — the
- * GitHub device code the user has to enter first.
+ * device code the user has to enter for the environment's tunnel provider first.
  */
-export function EditorActions({ tunnel }: { tunnel: TunnelInfo }) {
+export function EditorActions({ tunnel, provider }: { tunnel: TunnelInfo; provider: TunnelProvider }) {
   if (tunnel.phase === 'AwaitingLogin' && tunnel.deviceCode) {
+    const verificationUrl =
+      tunnel.verificationUrl ??
+      (provider === 'GitHub' ? 'https://github.com/login/device' : 'https://microsoft.com/devicelogin')
+
     return (
       <Box sx={{ bgcolor: 'action.hover', borderRadius: 2, p: 1.5 }}>
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-          Sign in to GitHub to enable the editors
+          Sign in to {provider} to enable the editors
         </Typography>
         <DeviceCode code={tunnel.deviceCode} />
         <Typography variant="caption" color="text.secondary" component="p">
           Enter it at{' '}
-          <Link href={tunnel.verificationUrl ?? 'https://github.com/login/device'} target="_blank" rel="noreferrer">
-            github.com/login/device
+          <Link href={verificationUrl} target="_blank" rel="noreferrer">
+            {verificationUrl.replace(/^https?:\/\//, '')}
           </Link>{' '}
           with the same account you use in VS Code.
         </Typography>

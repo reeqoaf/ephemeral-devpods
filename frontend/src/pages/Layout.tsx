@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { Link as RouterLink, useNavigate } from 'react-router'
 import {
   AppBar,
   Avatar,
@@ -47,10 +47,24 @@ export function Layout({ children }: { children: ReactNode }) {
         }}
       >
         <Toolbar sx={{ gap: 1 }}>
-          <DnsRoundedIcon color="primary" />
-          <Typography variant="h6" sx={{ fontWeight: 700, flexGrow: 1 }}>
-            ephemeral-devpods
-          </Typography>
+          <Box
+            component={RouterLink}
+            to="/"
+            aria-label="ephemeral-devpods home"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              color: 'inherit',
+              textDecoration: 'none',
+            }}
+          >
+            <DnsRoundedIcon color="primary" />
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              ephemeral-devpods
+            </Typography>
+          </Box>
+          <Box sx={{ flexGrow: 1 }} />
           <Tooltip title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
             <IconButton onClick={toggle} color="inherit">
               {mode === 'dark' ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}

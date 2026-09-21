@@ -1,6 +1,5 @@
 using System.Net;
 using EphemeralDevpods.Core.Models;
-using EphemeralDevpods.Core.Parsing;
 using EphemeralDevpods.Core.Provisioning;
 using EphemeralDevpods.Core.Repositories;
 using EphemeralDevpods.Functions.Http;
@@ -16,15 +15,13 @@ namespace EphemeralDevpods.Functions.Functions.Environments;
 /// pull/build times; likely needs to become fire-and-forget once ACI (slower) is wired in.
 /// </summary>
 public sealed class CreateEnvironment(
-    IDevcontainerFileFetcher fileFetcher,
-    IDevcontainerParser parser,
+    RepoInspector inspector,
+    HostPortSelector ports,
     IComputeProvisioner provisioner,
     IEnvironmentRepository environments,
     IResourceRepository resources,
     ILogger<CreateEnvironment> logger)
 {
-    private const int DefaultTtlMinutes = 60;
-
     [Function("CreateEnvironment")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "environments")] HttpRequestData req,
@@ -36,24 +33,28 @@ public sealed class CreateEnvironment(
             return await req.BadRequestAsync("repoUrl is required.", ct);
         }
 
-        var file = await fileFetcher.FetchAsync(body.RepoUrl, ct);
-
-        if (file is null)
-        {
-            return await req.BadRequestAsync(
-                "No devcontainer.json found (checked .devcontainer/devcontainer.json and .devcontainer.json).", ct);
-        }
-
-        var spec = parser.Parse(file.Content, file.BaseDirectory);
+        var inspection = await inspector.InspectAsync(body.RepoUrl, ct);
+        var spec = inspection.Spec;
+        var options = EnvironmentOptions.Resolve(
+            body.Name, body.TtlMinutes, body.CpuCores, body.MemoryMb, body.TunnelProvider, inspection.SuggestedName);
+        // Only local Docker publishes ports on the host; elsewhere there's nothing for the user to choose.
+        var portMappings = provisioner.PublishesHostPorts
+            ? await ports.ResolveAsync(spec.ForwardPorts, body.PortMappings, ct)
+            : null;
 
         var environment = new WorkspaceEnvironment
         {
             Owner = CurrentUser.GetId(context),
             EnvironmentId = Guid.NewGuid().ToString(),
             RepoUrl = body.RepoUrl,
+            Name = options.Name,
             Status = EnvironmentStatus.Provisioning,
-            TtlMinutes = DefaultTtlMinutes,
+            TtlMinutes = options.TtlMinutes,
             CreatedAt = DateTimeOffset.UtcNow,
+            CpuCores = options.CpuCores,
+            MemoryMb = options.MemoryMb,
+            TunnelProvider = options.TunnelProvider,
+            PortMappings = portMappings,
         };
         await environments.UpsertAsync(environment, ct);
 

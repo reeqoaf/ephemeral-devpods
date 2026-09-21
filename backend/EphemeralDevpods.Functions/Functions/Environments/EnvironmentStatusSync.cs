@@ -16,7 +16,7 @@ public sealed class EnvironmentStatusSync(IComputeProvisioner provisioner, IEnvi
     {
         if (environment.Status is not (EnvironmentStatus.Running or EnvironmentStatus.Provisioning))
         {
-            return new EnvironmentSnapshot(environment, null); // Expired/Failed are terminal — nothing left to check
+            return new EnvironmentSnapshot(environment, null); // Expired/Failed/Stopped: nothing live to check (Stopped is deliberate)
         }
 
         EnvironmentStatus liveStatus;

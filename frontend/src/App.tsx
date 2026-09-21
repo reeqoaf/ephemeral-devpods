@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router'
 import { RequireAuth } from './auth/RequireAuth'
 import { Account } from './pages/Account'
 import { Dashboard } from './pages/Dashboard'
+import { EnvironmentDetails } from './pages/EnvironmentDetails'
 import { Login } from './pages/Login'
 import { NewEnvironment } from './pages/NewEnvironment'
 
@@ -12,6 +13,7 @@ function App() {
       <Route element={<RequireAuth />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/new" element={<NewEnvironment />} />
+        <Route path="/environments/:id" element={<EnvironmentDetails />} />
         <Route path="/settings" element={<Account />} />
       </Route>
     </Routes>

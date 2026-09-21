@@ -63,6 +63,7 @@ public class AuthMiddlewareTests
             new HashSet<string>
             {
                 "CreateEnvironment", "ListEnvironments", "GetEnvironment", "ExtendEnvironment", "DeleteEnvironment",
+                "CheckRepository", "StopEnvironment", "StartEnvironment", "RestartEnvironment",
                 "GetMe", "UnlinkIdentity", "StartLink",
             },
             protectedFunctions);

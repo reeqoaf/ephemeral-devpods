@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using EphemeralDevpods.Core.Git;
 using EphemeralDevpods.Core.Parsing;
 
 namespace EphemeralDevpods.Infrastructure.Git;

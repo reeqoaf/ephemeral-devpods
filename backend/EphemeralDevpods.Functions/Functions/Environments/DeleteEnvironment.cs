@@ -8,7 +8,7 @@ using Microsoft.Azure.Functions.Worker.Http;
 
 namespace EphemeralDevpods.Functions.Functions.Environments;
 
-/// <summary>Tears an environment down now instead of waiting for TTL expiry (the dashboard's Stop button).</summary>
+/// <summary>Tears an environment down now instead of waiting for TTL expiry (the Delete action; Stop keeps the container).</summary>
 public sealed class DeleteEnvironment(
     IEnvironmentRepository environments, IResourceRepository resources, IComputeProvisioner provisioner)
 {
