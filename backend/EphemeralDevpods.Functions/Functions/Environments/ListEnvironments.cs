@@ -19,7 +19,8 @@ public sealed class ListEnvironments(IEnvironmentRepository environments, Enviro
         var refreshed = new List<EnvironmentResponse>(results.Count);
         foreach (var environment in results)
         {
-            refreshed.Add(EnvironmentResponse.From(await statusSync.RefreshAsync(environment, ct)));
+            var snapshot = await statusSync.RefreshAsync(environment, ct);
+            refreshed.Add(EnvironmentResponse.From(snapshot.Environment, snapshot.Tunnel));
         }
 
         return await req.WriteJsonAsync(HttpStatusCode.OK, refreshed, ct);

@@ -20,4 +20,9 @@ public sealed class AciProvisioner : IComputeProvisioner
     {
         throw new NotImplementedException();
     }
+
+    public Task<TunnelState> GetTunnelStateAsync(string environmentId, CancellationToken ct)
+    {
+        throw new NotImplementedException();
+    }
 }

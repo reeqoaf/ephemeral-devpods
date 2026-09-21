@@ -14,4 +14,7 @@ public interface IComputeProvisioner
 
     /// <exception cref="KeyNotFoundException">No compute resource exists for this environment.</exception>
     Task<EnvironmentStatus> GetStatusAsync(string environmentId, CancellationToken ct);
+
+    /// <exception cref="KeyNotFoundException">No compute resource exists for this environment.</exception>
+    Task<TunnelState> GetTunnelStateAsync(string environmentId, CancellationToken ct);
 }
