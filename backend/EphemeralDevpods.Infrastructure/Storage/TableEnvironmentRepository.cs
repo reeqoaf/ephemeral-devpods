@@ -37,13 +37,27 @@ public sealed class TableEnvironmentRepository(TableClient tableClient) : IEnvir
     {
         var results = new List<WorkspaceEnvironment>();
         await foreach (var entity in tableClient.QueryAsync<EnvironmentTableEntity>(
-            e => e.Status == nameof(EnvironmentStatus.Running) || e.Status == nameof(EnvironmentStatus.Provisioning),
+            e => e.Status == nameof(EnvironmentStatus.Running) ||
+                 e.Status == nameof(EnvironmentStatus.Provisioning) ||
+                 e.Status == nameof(EnvironmentStatus.Stopped),
             cancellationToken: ct))
         {
             if (entity.CreatedAt.AddMinutes(entity.TtlMinutes) <= cutoff)
             {
                 results.Add(entity.ToDomain());
             }
+        }
+
+        return results;
+    }
+
+    public async Task<IReadOnlyList<WorkspaceEnvironment>> ListActiveAsync(CancellationToken ct)
+    {
+        var results = new List<WorkspaceEnvironment>();
+        await foreach (var entity in tableClient.QueryAsync<EnvironmentTableEntity>(
+            e => e.Status != nameof(EnvironmentStatus.Expired), cancellationToken: ct))
+        {
+            results.Add(entity.ToDomain());
         }
 
         return results;

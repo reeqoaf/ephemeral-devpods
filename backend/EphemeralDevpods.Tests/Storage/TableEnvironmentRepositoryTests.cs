@@ -62,6 +62,96 @@ public class TableEnvironmentRepositoryTests(AzuriteFixture fixture) : IClassFix
     }
 
     [Fact]
+    public async Task Name_resources_and_provider_round_trip()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString());
+        env.Name = "My pod";
+        env.CpuCores = 2;
+        env.MemoryMb = 4096;
+        env.TunnelProvider = TunnelProvider.Microsoft;
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Equal("My pod", loaded.Name);
+        Assert.Equal(2, loaded.CpuCores);
+        Assert.Equal(4096, loaded.MemoryMb);
+        Assert.Equal(TunnelProvider.Microsoft, loaded.TunnelProvider);
+    }
+
+    [Fact]
+    public async Task Rows_written_before_names_and_limits_existed_load_with_nulls()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString());
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.Null(loaded.Name);
+        Assert.Null(loaded.CpuCores);
+        Assert.Null(loaded.MemoryMb);
+        Assert.Null(loaded.TunnelProvider);
+    }
+
+    [Fact]
+    public async Task Port_mappings_round_trip()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString());
+        env.PortMappings = [new PortMapping(3000, 8081), new PortMapping(5173, 8082)];
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.Equal(env.PortMappings, loaded?.PortMappings);
+    }
+
+    [Fact]
+    public async Task Rows_without_port_mappings_load_as_null()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString());
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.Null(loaded?.PortMappings);
+    }
+
+    [Fact]
+    public async Task ListActive_returns_every_owners_environments_except_expired_ones()
+    {
+        var alice = Guid.NewGuid().ToString();
+        var bob = Guid.NewGuid().ToString();
+        var running = MakeEnv(alice, Guid.NewGuid().ToString(), EnvironmentStatus.Running);
+        var stopped = MakeEnv(bob, Guid.NewGuid().ToString(), EnvironmentStatus.Stopped);
+        var failed = MakeEnv(bob, Guid.NewGuid().ToString(), EnvironmentStatus.Failed);
+        var expired = MakeEnv(alice, Guid.NewGuid().ToString(), EnvironmentStatus.Expired);
+        foreach (var env in new[] { running, stopped, failed, expired })
+        {
+            await _repo.UpsertAsync(env, CancellationToken.None);
+        }
+
+        var ids = (await _repo.ListActiveAsync(CancellationToken.None)).Select(e => e.EnvironmentId).ToHashSet();
+
+        Assert.Contains(running.EnvironmentId, ids);
+        Assert.Contains(stopped.EnvironmentId, ids);
+        Assert.Contains(failed.EnvironmentId, ids);
+        Assert.DoesNotContain(expired.EnvironmentId, ids);
+    }
+
+    [Fact]
+    public async Task Stopped_status_round_trips()
+    {
+        var env = MakeEnv("alice", Guid.NewGuid().ToString(), EnvironmentStatus.Stopped);
+
+        await _repo.UpsertAsync(env, CancellationToken.None);
+        var loaded = await _repo.GetAsync("alice", env.EnvironmentId, CancellationToken.None);
+
+        Assert.Equal(EnvironmentStatus.Stopped, loaded?.Status);
+    }
+
+    [Fact]
     public async Task Get_returns_null_when_missing()
     {
         var loaded = await _repo.GetAsync("nobody", "missing-id", CancellationToken.None);
@@ -114,16 +204,21 @@ public class TableEnvironmentRepositoryTests(AzuriteFixture fixture) : IClassFix
         var provisioningPastTtl = MakeEnv(owner, Guid.NewGuid().ToString(), EnvironmentStatus.Provisioning, ttlMinutes: 5,
             createdAt: now.AddMinutes(-30));
 
+        var stoppedPastTtl = MakeEnv(owner, Guid.NewGuid().ToString(), EnvironmentStatus.Stopped, ttlMinutes: 10,
+            createdAt: now.AddMinutes(-30));
+
         await _repo.UpsertAsync(expired, CancellationToken.None);
         await _repo.UpsertAsync(stillAlive, CancellationToken.None);
         await _repo.UpsertAsync(alreadyExpiredStatus, CancellationToken.None);
         await _repo.UpsertAsync(provisioningPastTtl, CancellationToken.None);
+        await _repo.UpsertAsync(stoppedPastTtl, CancellationToken.None);
 
         var results = await _repo.ListExpiringBeforeAsync(now, CancellationToken.None);
         var resultIds = results.Select(r => r.EnvironmentId).ToHashSet();
 
         Assert.Contains(expired.EnvironmentId, resultIds);
         Assert.Contains(provisioningPastTtl.EnvironmentId, resultIds);
+        Assert.Contains(stoppedPastTtl.EnvironmentId, resultIds); // a stopped container still has to be torn down
         Assert.DoesNotContain(stillAlive.EnvironmentId, resultIds);
         Assert.DoesNotContain(alreadyExpiredStatus.EnvironmentId, resultIds);
     }
