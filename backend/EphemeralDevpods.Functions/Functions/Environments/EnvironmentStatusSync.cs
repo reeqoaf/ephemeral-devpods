@@ -10,8 +10,15 @@ namespace EphemeralDevpods.Functions.Functions.Environments;
 /// call this before responding so the dashboard reflects reality (e.g. a container that has
 /// since crashed or exited) instead of a stale "Running" snapshot from provision time.
 /// </summary>
-public sealed class EnvironmentStatusSync(IComputeProvisioner provisioner, IEnvironmentRepository environments)
+public sealed class EnvironmentStatusSync(
+    IComputeProvisioner provisioner, IEnvironmentRepository environments, TimeProvider time)
 {
+    /// <summary>
+    /// Provisioning runs in a queued worker, so for a while the compute legitimately doesn't exist yet. Past this
+    /// long the worker is assumed dead (crash, poisoned message) and the environment is reported as failed.
+    /// </summary>
+    public static readonly TimeSpan ProvisioningTimeout = TimeSpan.FromMinutes(30);
+
     public async Task<EnvironmentSnapshot> RefreshAsync(WorkspaceEnvironment environment, CancellationToken ct)
     {
         if (environment.Status is not (EnvironmentStatus.Running or EnvironmentStatus.Provisioning))
@@ -26,9 +33,12 @@ public sealed class EnvironmentStatusSync(IComputeProvisioner provisioner, IEnvi
         }
         catch (KeyNotFoundException)
         {
-            // The container is gone (crashed and got reaped, removed outside our flow, etc.) —
-            // that's not a status we were expecting, so surface it rather than keep claiming Running.
-            liveStatus = EnvironmentStatus.Failed;
+            // Still provisioning: the worker just hasn't created the compute yet, so that's expected.
+            // Otherwise the container is gone (crashed and got reaped, removed outside our flow, etc.) —
+            // not a status we were expecting, so surface it rather than keep claiming Running.
+            var stillStarting = environment.Status == EnvironmentStatus.Provisioning
+                && time.GetUtcNow() - environment.CreatedAt < ProvisioningTimeout;
+            liveStatus = stillStarting ? EnvironmentStatus.Provisioning : EnvironmentStatus.Failed;
         }
 
         var changed = liveStatus != environment.Status;

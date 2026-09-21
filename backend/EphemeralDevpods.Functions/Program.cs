@@ -1,8 +1,10 @@
 using Azure.Data.Tables;
 using Azure.Monitor.OpenTelemetry.Exporter;
+using Azure.Storage.Queues;
 using EphemeralDevpods.Core.Auth;
 using EphemeralDevpods.Core.Git;
 using EphemeralDevpods.Core.Parsing;
+using EphemeralDevpods.Core.Provisioning;
 using EphemeralDevpods.Core.Repositories;
 using EphemeralDevpods.Functions.Compute;
 using EphemeralDevpods.Functions.Functions.Auth;
@@ -10,6 +12,7 @@ using EphemeralDevpods.Functions.Functions.Environments;
 using EphemeralDevpods.Functions.Http;
 using EphemeralDevpods.Infrastructure.Auth;
 using EphemeralDevpods.Infrastructure.Git;
+using EphemeralDevpods.Infrastructure.Provisioning;
 using EphemeralDevpods.Infrastructure.Storage;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
@@ -52,6 +55,15 @@ builder.Services.AddSingleton<IResourceRepository>(_ =>
     var client = new TableServiceClient(storageConnectionString).GetTableClient("resources");
     client.CreateIfNotExists();
     return new TableResourceRepository(client);
+});
+
+builder.Services.AddSingleton<IProvisioningQueue>(_ =>
+{
+    var client = new QueueClient(
+        storageConnectionString, StorageProvisioningQueue.QueueName,
+        new QueueClientOptions { MessageEncoding = QueueMessageEncoding.Base64 }); // what the Functions queue trigger expects
+    client.CreateIfNotExists();
+    return new StorageProvisioningQueue(client);
 });
 
 builder.Services.AddSingleton<IUserRepository>(_ =>
@@ -109,6 +121,7 @@ builder.Services.AddCompute(builder.Configuration);
 
 builder.Services.AddSingleton<EnvironmentStatusSync>();
 builder.Services.AddSingleton<EnvironmentLifecycle>();
+builder.Services.AddSingleton<EnvironmentProvisioning>();
 builder.Services.AddSingleton<RepoInspector>();
 builder.Services.AddSingleton<HostPortSelector>();
 

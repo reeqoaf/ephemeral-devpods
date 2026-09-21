@@ -11,7 +11,7 @@ public class EnvironmentStatusSyncTests
     {
         var provisioner = new FakeProvisioner { Tunnel = new TunnelState(TunnelPhase.Ready) };
         var repository = new FakeRepository();
-        var sync = new EnvironmentStatusSync(provisioner, repository);
+        var sync = new EnvironmentStatusSync(provisioner, repository, TimeProvider.System);
         var environment = TestEnvironments.Make();
 
         var first = await sync.RefreshAsync(environment, CancellationToken.None);
@@ -28,7 +28,7 @@ public class EnvironmentStatusSyncTests
     {
         var provisioner = new FakeProvisioner { Tunnel = new TunnelState(TunnelPhase.AwaitingLogin, "AAAA-1111", "https://github.com/login/device") };
         var repository = new FakeRepository();
-        var sync = new EnvironmentStatusSync(provisioner, repository);
+        var sync = new EnvironmentStatusSync(provisioner, repository, TimeProvider.System);
 
         var snapshot = await sync.RefreshAsync(TestEnvironments.Make(), CancellationToken.None);
 
@@ -41,7 +41,7 @@ public class EnvironmentStatusSyncTests
     public async Task Skips_the_tunnel_lookup_when_already_ready()
     {
         var provisioner = new FakeProvisioner();
-        var sync = new EnvironmentStatusSync(provisioner, new FakeRepository());
+        var sync = new EnvironmentStatusSync(provisioner, new FakeRepository(), TimeProvider.System);
 
         var snapshot = await sync.RefreshAsync(TestEnvironments.Make(tunnelReady: true), CancellationToken.None);
 
@@ -57,7 +57,7 @@ public class EnvironmentStatusSyncTests
     public async Task Skips_the_tunnel_lookup_unless_the_environment_is_running(EnvironmentStatus status)
     {
         var provisioner = new FakeProvisioner { Status = status };
-        var sync = new EnvironmentStatusSync(provisioner, new FakeRepository());
+        var sync = new EnvironmentStatusSync(provisioner, new FakeRepository(), TimeProvider.System);
 
         var snapshot = await sync.RefreshAsync(TestEnvironments.Make(status), CancellationToken.None);
 
@@ -70,12 +70,44 @@ public class EnvironmentStatusSyncTests
     {
         var provisioner = new FakeProvisioner { ContainerGone = true };
         var repository = new FakeRepository();
-        var sync = new EnvironmentStatusSync(provisioner, repository);
+        var sync = new EnvironmentStatusSync(provisioner, repository, TimeProvider.System);
 
         var snapshot = await sync.RefreshAsync(TestEnvironments.Make(), CancellationToken.None);
 
         Assert.Equal(EnvironmentStatus.Failed, snapshot.Environment.Status);
         Assert.Equal(0, provisioner.TunnelLookups);
         Assert.Equal(1, repository.Upserts);
+    }
+
+    [Fact]
+    public async Task A_provisioning_environment_without_compute_yet_stays_provisioning()
+    {
+        var provisioner = new FakeProvisioner { ContainerGone = true };
+        var repository = new FakeRepository();
+        var sync = new EnvironmentStatusSync(provisioner, repository, TimeProvider.System);
+
+        var snapshot = await sync.RefreshAsync(TestEnvironments.Make(EnvironmentStatus.Provisioning), CancellationToken.None);
+
+        Assert.Equal(EnvironmentStatus.Provisioning, snapshot.Environment.Status);
+        Assert.Equal(0, repository.Upserts);
+    }
+
+    [Fact]
+    public async Task A_provisioning_environment_that_never_got_compute_eventually_fails()
+    {
+        var provisioner = new FakeProvisioner { ContainerGone = true };
+        var repository = new FakeRepository();
+        var later = new FixedTimeProvider(DateTimeOffset.UtcNow + EnvironmentStatusSync.ProvisioningTimeout + TimeSpan.FromMinutes(1));
+        var sync = new EnvironmentStatusSync(provisioner, repository, later);
+
+        var snapshot = await sync.RefreshAsync(TestEnvironments.Make(EnvironmentStatus.Provisioning), CancellationToken.None);
+
+        Assert.Equal(EnvironmentStatus.Failed, snapshot.Environment.Status);
+        Assert.Equal(1, repository.Upserts);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

@@ -5,22 +5,21 @@ using EphemeralDevpods.Core.Repositories;
 using EphemeralDevpods.Functions.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Logging;
 
 namespace EphemeralDevpods.Functions.Functions.Environments;
 
 /// <summary>
 /// Parses devcontainer.json synchronously and rejects unsupported repos with 400 before creating
-/// any row (§14). Provisioning itself also runs synchronously for v1 — fine for local Docker's
-/// pull/build times; likely needs to become fire-and-forget once ACI (slower) is wired in.
+/// any row (§14). Provisioning outlasts an HTTP request (image pulls, ACR builds), so the row is
+/// created as Provisioning, the work is queued for <see cref="ProvisionEnvironment"/>, and the
+/// call returns 202; the dashboard follows the status from there.
 /// </summary>
 public sealed class CreateEnvironment(
     RepoInspector inspector,
     HostPortSelector ports,
     IComputeProvisioner provisioner,
     IEnvironmentRepository environments,
-    IResourceRepository resources,
-    ILogger<CreateEnvironment> logger)
+    IProvisioningQueue provisioningQueue)
 {
     [Function("CreateEnvironment")]
     public async Task<HttpResponseData> Run(
@@ -57,28 +56,8 @@ public sealed class CreateEnvironment(
             PortMappings = portMappings,
         };
         await environments.UpsertAsync(environment, ct);
+        await provisioningQueue.EnqueueAsync(new ProvisionRequest(environment.Owner, environment.EnvironmentId, spec), ct);
 
-        try
-        {
-            var result = await provisioner.ProvisionAsync(environment, spec, ct);
-            environment.Status = EnvironmentStatus.Running;
-            environment.PublicUrl = result.PublicUrl;
-            environment.AccessToken = result.AccessToken;
-            environment.TunnelName = result.TunnelName;
-
-            foreach (var resource in result.Resources)
-            {
-                await resources.UpsertAsync(resource, ct);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Provisioning failed for environment {EnvironmentId}", environment.EnvironmentId);
-            environment.Status = EnvironmentStatus.Failed;
-        }
-
-        await environments.UpsertAsync(environment, ct);
-
-        return await req.WriteJsonAsync(HttpStatusCode.Created, EnvironmentResponse.From(environment), ct);
+        return await req.WriteJsonAsync(HttpStatusCode.Accepted, EnvironmentResponse.From(environment), ct);
     }
 }
